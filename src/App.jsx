@@ -17,7 +17,7 @@ const fmtNow   = () => new Date().toLocaleTimeString("id-ID",{hour:"2-digit",min
 const nowStamp = () => new Date().toLocaleString("id-ID",{day:"2-digit",month:"short",hour:"2-digit",minute:"2-digit"});
 
 const STAFF_PIN = "1234";
-const OWNER_PIN = "0000";
+const Hubungi manager jika lupa PIN
 const SATUAN    = ["gram","kg","ml","liter","pcs","butir","siung","lembar","sdm","sdt","bungkus","porsi","cup","botol","ikat"];
 
 const emptyForm = () => ({
