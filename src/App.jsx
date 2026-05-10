@@ -378,27 +378,41 @@ function StatCard({ color, label, value }) {
 // =====================================================
 // PRODUKSI VIEW
 // =====================================================
+// PRODUKSI VIEW — Mentah → Prepack
+// =====================================================
 function ProduksiView({ bahanBaku, showToast, loadData, logAudit, setView, userName, setUserName, isLocked }) {
   const [tanggal, setTanggal] = useState(formatTanggal())
-  const [kategori, setKategori] = useState('Kitchen')
+  const [divisi, setDivisi] = useState('Kitchen')
   const [menuId, setMenuId] = useState('')
   const [bahanList, setBahanList] = useState([{ bahan_id: '', jumlah: '', satuan: '' }])
-  const [hasil, setHasil] = useState('')
-  const [status, setStatus] = useState('proses')
+  const [hasilSatuan, setHasilSatuan] = useState('')  // dalam satuan_dasar (liter, pcs, gram, dll)
+  const [hasilPorsi, setHasilPorsi] = useState('')    // dalam porsi (hanya untuk dual-unit)
+  const [status, setStatus] = useState('selesai')
   const [yangMasak, setYangMasak] = useState(userName)
   const [catatan, setCatatan] = useState('')
   const [foto, setFoto] = useState('')
   const [submitting, setSubmitting] = useState(false)
 
-  const menuOptions = bahanBaku.filter(b => b.kategori === 'jadi' && (b.divisi === kategori || b.divisi === 'Both'))
-  const bahanOptions = bahanBaku.filter(b => b.kategori === 'mentah' || b.kategori === 'prepack')
+  // Hanya prepack sesuai divisi
+  const menuOptions = bahanBaku.filter(b =>
+    b.kategori === 'prepack' && (b.divisi === divisi || b.divisi === 'Both') && b.is_active
+  )
+  // Hanya mentah sebagai bahan baku input
+  const bahanOptions = bahanBaku.filter(b => b.kategori === 'mentah' && b.is_active)
+
+  const selectedMenu = bahanBaku.find(b => b.id == menuId)
+  const satuanMenu = selectedMenu?.satuan_dasar || ''
+  // Kalau satuan sudah "porsi" atau "gelas" → 1 field saja, tidak perlu konversi
+  const isSimple = satuanMenu === 'porsi' || satuanMenu === 'gelas' || !selectedMenu
+
+  const handleDivisiChange = (val) => { setDivisi(val); setMenuId('') }
 
   const updateBahan = (idx, field, val) => {
     const newList = [...bahanList]
     newList[idx][field] = val
     if (field === 'bahan_id') {
       const b = bahanBaku.find(x => x.id == val)
-      if (b) newList[idx].satuan = b.satuan_dasar
+      newList[idx].satuan = b ? b.satuan_dasar : ''
     }
     setBahanList(newList)
   }
@@ -416,18 +430,22 @@ function ProduksiView({ bahanBaku, showToast, loadData, logAudit, setView, userN
   }
 
   const handleSubmit = async () => {
-    if (!menuId) { showToast('❌ Pilih menu'); return }
-    if (!hasil) { showToast('❌ Isi hasil'); return }
-    if (!yangMasak) { showToast('❌ Isi nama'); return }
-    if (status === 'selesai' && !foto) { showToast('❌ Foto wajib saat Selesai'); return }
+    if (!menuId) { showToast('❌ Pilih produk prepack yang dibuat'); return }
+    if (!hasilSatuan || Number(hasilSatuan) <= 0) { showToast('❌ Isi jumlah hasil produksi'); return }
+    if (!isSimple && (!hasilPorsi || Number(hasilPorsi) <= 0)) { showToast('❌ Isi jumlah porsi yang dihasilkan'); return }
+    if (!yangMasak.trim()) { showToast('❌ Isi nama yang masak/prep'); return }
+    if (status === 'selesai' && !foto) { showToast('❌ Foto hasil wajib saat status Selesai'); return }
     const validBahan = bahanList.filter(b => b.bahan_id && b.jumlah)
-    if (validBahan.length === 0) { showToast('❌ Minimal 1 bahan'); return }
+    if (validBahan.length === 0) { showToast('❌ Minimal 1 bahan mentah yang dipakai'); return }
 
     setSubmitting(true)
     setUserName(yangMasak)
 
     try {
       const menu = bahanBaku.find(b => b.id == menuId)
+      const finalHasilSatuan = Number(hasilSatuan)
+      const finalHasilPorsi = isSimple ? finalHasilSatuan : Number(hasilPorsi)
+
       const bahanWithName = validBahan.map(b => {
         const ba = bahanBaku.find(x => x.id == b.bahan_id)
         return { bahan_id: ba.id, nama: ba.nama, jumlah: Number(b.jumlah), satuan: b.satuan }
@@ -435,24 +453,38 @@ function ProduksiView({ bahanBaku, showToast, loadData, logAudit, setView, userN
 
       const newId = generateId()
       await supabase.from('produksi').insert({
-        id: newId, tanggal, menu_id: menu.id, menu_nama: menu.nama, menu_kategori: kategori,
-        bahan_baku: bahanWithName, hasil_pcs: Number(hasil), hasil_porsi: Number(hasil),
+        id: newId, tanggal,
+        menu_id: menu.id, menu_nama: menu.nama, menu_kategori: divisi,
+        bahan_baku: bahanWithName,
+        hasil_pcs: finalHasilSatuan,
+        hasil_porsi: finalHasilPorsi,
         foto, status, yang_masak: yangMasak, catatan,
       })
 
-      // Update stok: kurangi bahan mentah/prepack, tambah produk jadi (jika status=selesai)
+      // Kurangi stok mentah
       for (const b of bahanWithName) {
         const ba = bahanBaku.find(x => x.id === b.bahan_id)
-        if (ba) await supabase.from('bahan_baku').update({ stok_saat_ini: Math.max(0, ba.stok_saat_ini - b.jumlah) }).eq('id', ba.id)
+        if (ba) await supabase.from('bahan_baku').update({
+          stok_saat_ini: Math.max(0, ba.stok_saat_ini - b.jumlah)
+        }).eq('id', ba.id)
       }
-      if (status === 'selesai' || status === 'approved') {
-        await supabase.from('bahan_baku').update({ stok_saat_ini: menu.stok_saat_ini + Number(hasil) }).eq('id', menu.id)
+
+      // Tambah stok prepack (dalam satuan_dasar) saat status Selesai
+      if (status === 'selesai') {
+        await supabase.from('bahan_baku').update({
+          stok_saat_ini: (menu.stok_saat_ini || 0) + finalHasilSatuan
+        }).eq('id', menu.id)
       }
 
       await logAudit('produksi', newId, 'create', menu.id, menu.nama, {
-        bahan: bahanWithName, hasil: Number(hasil), status
+        bahan: bahanWithName,
+        hasil: finalHasilSatuan,
+        satuan: menu.satuan_dasar,
+        hasil_porsi: finalHasilPorsi,
+        status,
       })
-      showToast('✅ Produksi tersimpan, stok auto-update')
+
+      showToast(`✅ ${menu.nama} +${finalHasilSatuan} ${menu.satuan_dasar} — stok terupdate`)
       loadData()
       setView('home')
     } catch (e) { showToast('❌ ' + e.message) }
@@ -464,32 +496,43 @@ function ProduksiView({ bahanBaku, showToast, loadData, logAudit, setView, userN
   return (
     <div>
       <h2 style={{ fontSize: '17px', fontWeight: 600, marginBottom: '4px' }}>📝 Input Produksi</h2>
-      <p style={{ fontSize: '12px', color: C.text3, marginBottom: '14px' }}>Bahan baku otomatis kurangi stok mentah</p>
+      <p style={{ fontSize: '12px', color: C.text3, marginBottom: '14px' }}>Mentah → Prepack · stok otomatis terupdate</p>
 
-      <FormRow label="Tanggal"><input type="date" value={tanggal} onChange={e => setTanggal(e.target.value)} style={S.input} /></FormRow>
+      <FormRow label="Tanggal">
+        <input type="date" value={tanggal} onChange={e => setTanggal(e.target.value)} style={S.input} />
+      </FormRow>
 
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' }}>
-        <FormRow label="Kategori">
-          <select value={kategori} onChange={e => setKategori(e.target.value)} style={S.input}>
-            <option value="Kitchen">Kitchen</option><option value="Bar">Bar</option>
+        <FormRow label="Divisi">
+          <select value={divisi} onChange={e => handleDivisiChange(e.target.value)} style={S.input}>
+            <option value="Kitchen">Kitchen</option>
+            <option value="Bar">Bar</option>
           </select>
         </FormRow>
-        <FormRow label="Menu">
+        <FormRow label="Produk yang dibuat">
           <select value={menuId} onChange={e => setMenuId(e.target.value)} style={S.input}>
-            <option value="">Pilih menu...</option>
+            <option value="">Pilih prepack...</option>
             {menuOptions.map(m => <option key={m.id} value={m.id}>{m.nama}</option>)}
           </select>
         </FormRow>
       </div>
 
+      {menuOptions.length === 0 && (
+        <div style={{ background: C.yellowBg, padding: '10px 12px', borderRadius: '7px', fontSize: '12px', color: C.yellow, marginBottom: '12px' }}>
+          ⚠️ Belum ada produk <strong>prepack</strong> untuk divisi {divisi}. Tambah di master (kategori = prepack).
+        </div>
+      )}
+
       <hr style={{ border: 'none', borderTop: `1px solid ${C.panel2}`, margin: '14px 0' }} />
-      <div style={{ fontSize: '12px', color: C.text3, fontWeight: 500, marginBottom: '8px' }}>🥬 Bahan baku digunakan:</div>
+      <div style={{ fontSize: '12px', color: C.text3, fontWeight: 500, marginBottom: '8px' }}>🥬 Bahan mentah yang dipakai:</div>
 
       {bahanList.map((b, idx) => (
         <div key={idx} style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr auto', gap: '6px', marginBottom: '8px', alignItems: 'end' }}>
           <select value={b.bahan_id} onChange={e => updateBahan(idx, 'bahan_id', e.target.value)} style={S.input}>
             <option value="">Pilih bahan...</option>
-            {bahanOptions.map(o => <option key={o.id} value={o.id}>{o.nama} ({o.stok_saat_ini} {o.satuan_dasar})</option>)}
+            {bahanOptions.map(o => (
+              <option key={o.id} value={o.id}>{o.nama} ({o.stok_saat_ini} {o.satuan_dasar})</option>
+            ))}
           </select>
           <input type="number" placeholder="Jumlah" value={b.jumlah} onChange={e => updateBahan(idx, 'jumlah', e.target.value)} style={S.input} />
           <input type="text" value={b.satuan} readOnly style={{ ...S.input, background: C.panel2 }} />
@@ -497,32 +540,69 @@ function ProduksiView({ bahanBaku, showToast, loadData, logAudit, setView, userN
         </div>
       ))}
 
-      <button onClick={addBahan} style={{ ...S.btn, background: 'transparent', border: `1px dashed ${C.border}`, color: C.text2, width: '100%', marginBottom: '14px' }}>+ Tambah bahan</button>
+      <button onClick={addBahan} style={{ ...S.btn, background: 'transparent', border: `1px dashed ${C.border}`, color: C.text2, width: '100%', marginBottom: '14px' }}>
+        + Tambah bahan
+      </button>
 
-      <div style={{ background: C.yellowBg, padding: '10px 12px', borderRadius: '7px', fontSize: '11px', color: C.yellow, marginBottom: '12px' }}>
-        📌 <strong>Satuan tersedia:</strong> {SATUAN_LIST.join(', ')}<br />❌ <strong>Dihapus:</strong> sdt, sdm
-      </div>
+      <hr style={{ border: 'none', borderTop: `1px solid ${C.panel2}`, margin: '14px 0' }} />
+      <div style={{ fontSize: '12px', color: C.text3, fontWeight: 500, marginBottom: '8px' }}>📦 Hasil produksi:</div>
+
+      {!selectedMenu ? (
+        <div style={{ background: C.panel2, padding: '12px', borderRadius: '8px', marginBottom: '12px', fontSize: '12px', color: C.text3, textAlign: 'center' }}>
+          Pilih produk yang dibuat dulu
+        </div>
+      ) : isSimple ? (
+        // Satuan sudah porsi/gelas — 1 field saja
+        <div style={{ background: C.panel2, padding: '12px', borderRadius: '8px', marginBottom: '12px' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <input type="number" placeholder="0" value={hasilSatuan} onChange={e => setHasilSatuan(e.target.value)}
+              style={{ ...S.input, width: '100px', textAlign: 'center', fontSize: '16px', fontWeight: 600 }} />
+            <span style={{ fontSize: '14px', fontWeight: 500, color: C.text }}>{satuanMenu}</span>
+          </div>
+          <p style={{ fontSize: '11px', color: C.text3, marginTop: '6px', marginBottom: 0 }}>
+            Stok {selectedMenu.nama} bertambah {hasilSatuan || '...'} {satuanMenu}
+          </p>
+        </div>
+      ) : (
+        // Dual unit — X satuan = Y porsi
+        <div style={{ background: C.panel2, padding: '12px', borderRadius: '8px', marginBottom: '12px' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+            <input type="number" placeholder="0" value={hasilSatuan} onChange={e => setHasilSatuan(e.target.value)}
+              style={{ ...S.input, width: '80px', textAlign: 'center', fontSize: '15px', fontWeight: 600 }} />
+            <span style={{ fontSize: '13px', fontWeight: 500, color: C.text }}>{satuanMenu}</span>
+            <span style={{ fontSize: '13px', color: C.text3, padding: '0 4px' }}>=</span>
+            <input type="number" placeholder="0" value={hasilPorsi} onChange={e => setHasilPorsi(e.target.value)}
+              style={{ ...S.input, width: '80px', textAlign: 'center', fontSize: '15px', fontWeight: 600 }} />
+            <span style={{ fontSize: '13px', fontWeight: 500, color: C.text }}>porsi</span>
+          </div>
+          <p style={{ fontSize: '11px', color: C.text3, marginTop: '6px', marginBottom: 0 }}>
+            Stok {selectedMenu.nama} bertambah {hasilSatuan || '...'} {satuanMenu}
+          </p>
+        </div>
+      )}
 
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' }}>
-        <FormRow label="Hasil porsi/pcs"><input type="number" value={hasil} onChange={e => setHasil(e.target.value)} style={S.input} /></FormRow>
         <FormRow label="Status">
           <select value={status} onChange={e => setStatus(e.target.value)} style={S.input}>
             <option value="proses">🔄 Proses</option>
-            <option value="selesai">✅ Selesai (foto wajib)</option>
+            <option value="selesai">✅ Selesai</option>
           </select>
         </FormRow>
+        <FormRow label="Yang masak/prep">
+          <input type="text" value={yangMasak} onChange={e => setYangMasak(e.target.value)} placeholder="Nama..." style={S.input} />
+        </FormRow>
       </div>
-
-      <FormRow label="Yang masak"><input type="text" value={yangMasak} onChange={e => setYangMasak(e.target.value)} placeholder="Nama..." style={S.input} /></FormRow>
 
       {status === 'selesai' && (
         <FormRow label="Foto hasil (wajib)">
           <input type="file" accept="image/*" capture="environment" onChange={handleFoto} style={{ ...S.input, padding: '8px' }} />
-          {foto && <img src={foto} alt="" style={{ maxWidth: '120px', marginTop: '8px', borderRadius: '6px' }} />}
+          {foto && <img src={foto} alt="foto hasil" style={{ maxWidth: '120px', marginTop: '8px', borderRadius: '6px' }} />}
         </FormRow>
       )}
 
-      <FormRow label="Catatan"><textarea rows={2} value={catatan} onChange={e => setCatatan(e.target.value)} style={S.input} /></FormRow>
+      <FormRow label="Catatan">
+        <textarea rows={2} value={catatan} onChange={e => setCatatan(e.target.value)} style={S.input} />
+      </FormRow>
 
       <button onClick={handleSubmit} disabled={submitting} style={{ ...S.btn, ...S.btnPrimary, width: '100%', padding: '13px', opacity: submitting ? 0.6 : 1 }}>
         {submitting ? 'Menyimpan...' : '💾 Simpan Produksi'}
