@@ -872,8 +872,194 @@ function ClosingDetail({ bahan, yangClosing, setYangClosing, onBack, showToast, 
 // =====================================================
 // STOK LIST VIEW
 // =====================================================
-function StokListView({ bahanBaku }) {
+// =====================================================
+// BAHAN FORM MODAL (Tambah/Edit Bahan Baku)
+// =====================================================
+function BahanFormModal({ mode, initial, onClose, showToast, loadData, logAudit, bahanBaku, userName }) {
+  const [nama, setNama] = useState(initial?.nama || '')
+  const [kategori, setKategori] = useState(initial?.kategori || 'mentah')
+  const [divisi, setDivisi] = useState(initial?.divisi || 'Kitchen')
+  const [satuan, setSatuan] = useState(initial?.satuan_dasar || 'gram')
+  const [kemasan, setKemasan] = useState(initial?.kemasan || '')
+  const [stokMin, setStokMin] = useState(initial?.stok_minimum ?? 0)
+  const [stokAwal, setStokAwal] = useState(0)
+  const [harga, setHarga] = useState(initial?.harga_per_satuan ?? 0)
+  const [perishable, setPerishable] = useState(initial?.is_perishable || false)
+  const [umurSimpan, setUmurSimpan] = useState(initial?.umur_simpan_hari || '')
+  const [catatan, setCatatan] = useState(initial?.catatan || '')
+  const [yangCatat, setYangCatat] = useState(userName || '')
+  const [submitting, setSubmitting] = useState(false)
+
+  const isEdit = mode === 'edit'
+
+  const handleSubmit = async () => {
+    if (!nama.trim()) { showToast('❌ Nama harus diisi'); return }
+    if (!yangCatat.trim()) { showToast('❌ Yang catat harus diisi'); return }
+
+    // Cek duplikat nama (kecuali edit dirinya sendiri)
+    const dup = bahanBaku.find(b =>
+      b.nama.toLowerCase() === nama.trim().toLowerCase() &&
+      (!isEdit || b.id !== initial.id)
+    )
+    if (dup) { showToast('❌ Nama bahan sudah ada di master'); return }
+
+    setSubmitting(true)
+    try {
+      const payload = {
+        nama: nama.trim(),
+        kategori, divisi,
+        satuan_dasar: satuan,
+        kemasan: kemasan.trim() || null,
+        stok_minimum: Number(stokMin) || 0,
+        harga_per_satuan: Number(harga) || 0,
+        is_perishable: perishable,
+        umur_simpan_hari: perishable ? (Number(umurSimpan) || null) : null,
+        catatan: catatan.trim() || null,
+        is_active: true,
+        updated_at: new Date().toISOString(),
+      }
+
+      if (isEdit) {
+        const { error } = await supabase.from('bahan_baku').update(payload).eq('id', initial.id)
+        if (error) throw error
+        await logAudit('bahan_baku', initial.id, 'update', initial, payload, { yang_catat: yangCatat })
+        showToast(`✅ ${nama} ter-update`)
+      } else {
+        const newId = generateId()
+        const { error } = await supabase.from('bahan_baku').insert({
+          id: newId, ...payload,
+          stok_saat_ini: Number(stokAwal) || 0,
+        })
+        if (error) throw error
+        await logAudit('bahan_baku', newId, 'create', null, payload, { yang_catat: yangCatat })
+        showToast(`✅ ${nama} ditambah ke master`)
+      }
+
+      loadData()
+      onClose()
+    } catch (e) { showToast('❌ ' + e.message) }
+    setSubmitting(false)
+  }
+
+  return (
+    <div style={{
+      position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)',
+      display: 'flex', alignItems: 'flex-start', justifyContent: 'center',
+      zIndex: 1000, padding: '20px', overflowY: 'auto',
+    }} onClick={onClose}>
+      <div style={{
+        background: C.panel, borderRadius: '12px', padding: '20px',
+        width: '100%', maxWidth: '420px', marginTop: '20px',
+      }} onClick={e => e.stopPropagation()}>
+        <h3 style={{ fontSize: '15px', fontWeight: 600, marginBottom: '4px' }}>
+          {isEdit ? '✏️ Edit Bahan' : '➕ Tambah Bahan Baru'}
+        </h3>
+        <p style={{ fontSize: '11px', color: C.text3, marginBottom: '14px' }}>
+          {isEdit ? `${initial.nama} · stok saat ini: ${initial.stok_saat_ini} ${initial.satuan_dasar}` : 'Isi data bahan baru'}
+        </p>
+
+        <label style={S.label}>Nama Bahan *</label>
+        <input value={nama} onChange={e => setNama(e.target.value)} placeholder="Misal: Ayam Fillet" style={{ ...S.input, marginBottom: '8px' }} />
+
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px', marginBottom: '8px' }}>
+          <div>
+            <label style={S.label}>Kategori *</label>
+            <select value={kategori} onChange={e => setKategori(e.target.value)} style={S.input}>
+              <option value="mentah">Mentah</option>
+              <option value="prepack">Pre-pack</option>
+              <option value="jadi">Jadi</option>
+            </select>
+          </div>
+          <div>
+            <label style={S.label}>Divisi *</label>
+            <select value={divisi} onChange={e => setDivisi(e.target.value)} style={S.input}>
+              <option value="Kitchen">Kitchen</option>
+              <option value="Bar">Bar</option>
+              <option value="Both">Both</option>
+            </select>
+          </div>
+        </div>
+
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px', marginBottom: '8px' }}>
+          <div>
+            <label style={S.label}>Satuan Dasar *</label>
+            <select value={satuan} onChange={e => setSatuan(e.target.value)} style={S.input}>
+              <option value="gram">gram</option>
+              <option value="kg">kg</option>
+              <option value="ml">ml</option>
+              <option value="liter">liter</option>
+              <option value="pcs">pcs</option>
+              <option value="buah">buah</option>
+              <option value="butir">butir</option>
+              <option value="porsi">porsi</option>
+              <option value="gelas">gelas</option>
+              <option value="lembar">lembar</option>
+              <option value="ikat">ikat</option>
+              <option value="sisir">sisir</option>
+              <option value="pinch">pinch</option>
+            </select>
+          </div>
+          <div>
+            <label style={S.label}>Kemasan</label>
+            <input value={kemasan} onChange={e => setKemasan(e.target.value)} placeholder="1 jirigen 5L" style={S.input} />
+          </div>
+        </div>
+
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px', marginBottom: '8px' }}>
+          <div>
+            <label style={S.label}>Stok Minimum</label>
+            <input type="number" value={stokMin} onChange={e => setStokMin(e.target.value)} style={S.input} />
+          </div>
+          <div>
+            <label style={S.label}>Harga / {satuan} (Rp)</label>
+            <input type="number" value={harga} onChange={e => setHarga(e.target.value)} style={S.input} />
+          </div>
+        </div>
+
+        {!isEdit && (
+          <div style={{ marginBottom: '8px' }}>
+            <label style={S.label}>Stok Awal (opsional)</label>
+            <input type="number" value={stokAwal} onChange={e => setStokAwal(e.target.value)} placeholder="0" style={S.input} />
+            <p style={{ fontSize: '10px', color: C.text3, marginTop: '2px' }}>Kosongkan kalau belum ada stok fisik. Bisa input nanti via Belanja.</p>
+          </div>
+        )}
+
+        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', margin: '10px 0' }}>
+          <input type="checkbox" checked={perishable} onChange={e => setPerishable(e.target.checked)} id="perishable-check" />
+          <label htmlFor="perishable-check" style={{ fontSize: '12px', cursor: 'pointer' }}>Cepat busuk (perishable)</label>
+        </div>
+
+        {perishable && (
+          <div style={{ marginBottom: '8px' }}>
+            <label style={S.label}>Umur Simpan (hari) *</label>
+            <input type="number" value={umurSimpan} onChange={e => setUmurSimpan(e.target.value)} placeholder="Misal: 3" style={S.input} />
+          </div>
+        )}
+
+        <label style={S.label}>Catatan</label>
+        <textarea value={catatan} onChange={e => setCatatan(e.target.value)} placeholder="Optional: supplier, tips, dll" rows={2} style={{ ...S.input, resize: 'vertical', marginBottom: '8px' }} />
+
+        <label style={S.label}>Yang Catat *</label>
+        <input value={yangCatat} onChange={e => setYangCatat(e.target.value)} placeholder="Nama kamu" style={S.input} />
+
+        <div style={{ display: 'flex', gap: '8px', marginTop: '14px' }}>
+          <button onClick={onClose} style={{ ...S.btn, ...S.btnSecondary, flex: 1 }}>Batal</button>
+          <button onClick={handleSubmit} disabled={submitting} style={{ ...S.btn, ...S.btnPrimary, flex: 2, opacity: submitting ? 0.6 : 1 }}>
+            {submitting ? 'Menyimpan...' : isEdit ? '💾 Update' : '➕ Tambah'}
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// =====================================================
+// STOK LIST VIEW (with Tambah/Edit Bahan)
+// =====================================================
+function StokListView({ bahanBaku, showToast, loadData, logAudit, userName }) {
   const [filter, setFilter] = useState('all')
+  const [modal, setModal] = useState(null) // null | { mode, initial }
+
   const filtered = filter === 'all' ? bahanBaku : bahanBaku.filter(b => b.kategori === filter)
 
   const stats = {
@@ -888,8 +1074,14 @@ function StokListView({ bahanBaku }) {
 
   return (
     <div>
-      <h2 style={{ fontSize: '17px', fontWeight: 600, marginBottom: '4px' }}>📦 Daftar Stok</h2>
-      <p style={{ fontSize: '12px', color: C.text3, marginBottom: '14px' }}>Real-time · update otomatis</p>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '4px' }}>
+        <h2 style={{ fontSize: '17px', fontWeight: 600 }}>📦 Daftar Stok</h2>
+        <button onClick={() => setModal({ mode: 'add', initial: null })}
+          style={{ background: C.text, color: C.panel, border: 'none', borderRadius: '7px', padding: '7px 12px', fontSize: '12px', fontWeight: 600, cursor: 'pointer' }}>
+          ➕ Tambah Bahan
+        </button>
+      </div>
+      <p style={{ fontSize: '12px', color: C.text3, marginBottom: '14px' }}>Real-time · tap item untuk edit</p>
 
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '6px', marginBottom: '14px' }}>
         <StatCard color="default" label="Total" value={stats.total} />
@@ -910,22 +1102,42 @@ function StokListView({ bahanBaku }) {
         ))}
       </div>
 
+      {filtered.length === 0 && (
+        <div style={{ textAlign: 'center', padding: '30px 20px', color: C.text3, fontSize: '12px' }}>
+          Belum ada bahan. Klik <strong>➕ Tambah Bahan</strong> di atas untuk mulai.
+        </div>
+      )}
+
       {filtered.map(b => {
         const statusColor = b.stok_saat_ini < b.stok_minimum ? 'red' : b.stok_saat_ini < b.stok_minimum * 1.5 ? 'yellow' : 'greenLight'
         return (
-          <div key={b.id} style={{
+          <div key={b.id} onClick={() => setModal({ mode: 'edit', initial: b })} style={{
             background: C[statusColor + 'Bg'], borderLeft: `3px solid ${C[statusColor + 'Border']}`,
             padding: '11px 12px', borderRadius: '8px', marginBottom: '6px',
-            display: 'flex', alignItems: 'center', gap: '10px'
+            display: 'flex', alignItems: 'center', gap: '10px', cursor: 'pointer',
           }}>
             <div style={{ flex: 1 }}>
               <div style={{ fontSize: '13px', fontWeight: 600 }}>{b.nama} <span style={{ fontSize: '10px', color: C.text3, fontWeight: 400 }}>({b.kategori})</span></div>
-              <div style={{ fontSize: '11px', color: C[statusColor], marginTop: '2px' }}>{b.divisi} · Min {b.stok_minimum} {b.satuan_dasar}</div>
+              <div style={{ fontSize: '11px', color: C[statusColor], marginTop: '2px' }}>{b.divisi} · Min {b.stok_minimum} {b.satuan_dasar}{b.harga_per_satuan > 0 ? ` · ${formatRupiah(b.harga_per_satuan)}/${b.satuan_dasar}` : ''}</div>
             </div>
             <div style={{ fontSize: '14px', fontWeight: 600, color: C[statusColor] }}>{b.stok_saat_ini} {b.satuan_dasar}</div>
+            <span style={{ fontSize: '14px', color: C.text3 }}>✏️</span>
           </div>
         )
       })}
+
+      {modal && (
+        <BahanFormModal
+          mode={modal.mode}
+          initial={modal.initial}
+          onClose={() => setModal(null)}
+          showToast={showToast}
+          loadData={loadData}
+          logAudit={logAudit}
+          bahanBaku={bahanBaku}
+          userName={userName}
+        />
+      )}
     </div>
   )
 }
