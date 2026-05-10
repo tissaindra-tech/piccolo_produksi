@@ -6,8 +6,8 @@ import * as XLSX from 'xlsx'
 // PICCOLO CORNER v3 - Aplikasi Produksi & Inventory
 // =====================================================
 const PIN_STAFF = '1234'
-const PIN_PURCHASING = '5678'
 const PIN_OWNER = '0000'
+// PIN 5678 (Purchasing) sudah dihapus — disederhanakan jadi 2 role
 const THRESHOLD_KECIL = 100000
 const CLOSING_LOCK_DAYS = 4
 
@@ -50,8 +50,8 @@ function Login({ onLogin }) {
   const handleSubmit = (e) => {
     e?.preventDefault()
     if (pin === PIN_STAFF) onLogin('staff')
-    else if (pin === PIN_PURCHASING) onLogin('purchasing')
     else if (pin === PIN_OWNER) onLogin('owner')
+    else setError('PIN salah. Coba lagi.')
     else { setError('PIN salah'); setPin('') }
   }
 
@@ -188,17 +188,11 @@ function AppShell(props) {
     staff: [
       { id: 'home', label: '🏠 Home' },
       { id: 'produksi', label: '📝 Produksi' },
-      { id: 'inputnota', label: '🧾 Input Nota' },
+      { id: 'inputnota', label: '🧾 Nota' },
       { id: 'closing', label: '🔍 Closing' },
       { id: 'stoklist', label: '📦 Stok' },
       { id: 'waste', label: '🗑️ Waste' },
-    ],
-    purchasing: [
-      { id: 'home', label: '🏠 Home' },
-      { id: 'inputnota', label: '🧾 Input Nota' },
-      { id: 'stoklist', label: '📦 Stok' },
       { id: 'historybelanja', label: '📜 History' },
-      { id: 'waste', label: '🗑️ Waste' },
     ],
     owner: [
       { id: 'home', label: '🏠 Home' },
@@ -214,7 +208,7 @@ function AppShell(props) {
       <div style={{ padding: '14px 18px', background: C.text, color: C.panel, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
         <div>
           <div style={{ fontSize: '15px', fontWeight: 600 }}>☕ Piccolo Corner</div>
-          <div style={{ fontSize: '11px', opacity: 0.7 }}>{role === 'staff' ? 'Staff Kitchen/Bar' : role === 'purchasing' ? 'Staff Purchasing' : 'Owner'} · {formatTanggalID(new Date())}</div>
+          <div style={{ fontSize: '11px', opacity: 0.7 }}>{role === 'owner' ? 'Owner' : 'Staff'} · {formatTanggalID(new Date())}</div>
         </div>
         <button onClick={handleLogout} style={{ ...S.btn, background: C.text2, color: C.panel, padding: '6px 12px', fontSize: '11px' }}>Logout</button>
       </div>
@@ -278,23 +272,12 @@ function HomeView(props) {
 
       <div style={{ fontSize: '12px', color: C.text3, marginBottom: '8px', fontWeight: 500 }}>Pilih aksi:</div>
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px', marginBottom: '16px' }}>
-        {role === 'staff' && (
-          <>
-            <BigBtn color="green" icon="📝" label="Input Produksi" onClick={() => setView('produksi')} />
-            <BigBtn color="yellow" icon="🧾" label="Input Nota Belanja" onClick={() => setView('inputnota')} />
-            <BigBtn color="blue" icon="🔍" label="Closing Stok" onClick={() => setView('closing')} />
-            <BigBtn color="default" icon="📦" label="Lihat Stok" onClick={() => setView('stoklist')} />
-            <BigBtn color="red" icon="🗑️" label="Waste Spontan" onClick={() => setView('waste')} />
-          </>
-        )}
-        {role === 'purchasing' && (
-          <>
-            <BigBtn color="yellow" icon="🧾" label="Input Nota" onClick={() => setView('inputnota')} />
-            <BigBtn color="default" icon="📦" label="Lihat Stok" onClick={() => setView('stoklist')} />
-            <BigBtn color="blue" icon="📜" label="History Belanja" onClick={() => setView('historybelanja')} />
-            <BigBtn color="red" icon="🗑️" label="Waste" onClick={() => setView('waste')} />
-          </>
-        )}
+        <BigBtn color="green" icon="📝" label="Input Produksi" onClick={() => setView('produksi')} />
+        <BigBtn color="yellow" icon="🧾" label="Input Nota" onClick={() => setView('inputnota')} />
+        <BigBtn color="blue" icon="🔍" label="Closing Stok" onClick={() => setView('closing')} />
+        <BigBtn color="default" icon="📦" label="Lihat Stok" onClick={() => setView('stoklist')} />
+        <BigBtn color="red" icon="🗑️" label="Waste" onClick={() => setView('waste')} />
+        <BigBtn color="default" icon="📜" label="History Belanja" onClick={() => setView('historybelanja')} />
       </div>
 
       <div style={{ background: C.panel2, padding: '8px 12px', borderRadius: '7px', fontSize: '12px', marginBottom: '12px' }}>
@@ -661,7 +644,7 @@ function InputNotaView({ bahanBaku, showToast, loadData, logAudit, setView, user
         await supabase.from('petty_cash').insert({
           id: generateId(), tanggal, jenis: 'pengeluaran',
           jumlah: -totalHarga, saldo_setelah: 0,
-          pemegang: 'purchasing', belanja_id: newId, yang_input: yangBelanja,
+          pemegang: 'staff', belanja_id: newId, yang_input: yangBelanja,
         })
       }
 
@@ -676,7 +659,7 @@ function InputNotaView({ bahanBaku, showToast, loadData, logAudit, setView, user
 
   const jalurInfo = {
     kecil: { color: 'greenLight', text: '🟢 Belanja Kecil: Nominal < Rp 100rb. Siapa saja boleh beli pakai kas kasir. Approval via WA.' },
-    normal: { color: 'blue', text: '🔵 Belanja Normal: Nominal ≥ Rp 100rb. Biasanya purchasing dengan transfer/petty cash.' },
+    normal: { color: 'blue', text: '🔵 Belanja Normal: Nominal ≥ Rp 100rb. Transfer atau petty cash. WA owner untuk konfirmasi.' },
     darurat: { color: 'red', text: '🔴 Belanja Darurat: Untuk situasi mendesak. WA owner dulu, lalu beli pakai kas kasir.' }
   }[jalur]
 
@@ -702,7 +685,7 @@ function InputNotaView({ bahanBaku, showToast, loadData, logAudit, setView, user
       <FormRow label="Sumber dana">
         <select value={sumberDana} onChange={e => setSumberDana(e.target.value)} style={S.input}>
           <option value="kas_kasir">🏪 Kas kasir</option>
-          <option value="petty_cash">💵 Petty cash purchasing</option>
+          <option value="petty_cash">💵 Petty cash</option>
           <option value="transfer_owner">💸 Owner transfer</option>
         </select>
       </FormRow>
