@@ -7,7 +7,7 @@
 import { useState, useEffect, useMemo } from 'react'
 import * as XLSX from 'xlsx'
 import { supabase, generateId, formatTanggal, formatTanggalID, formatRupiah } from './supabase'
-import { C, S, uploadFotoToStorage, SUMBER_DANA_LABEL } from './shared'
+import { C, S, uploadFotoToStorage, SUMBER_DANA_LABEL, sumberText } from './shared'
 
 const KATEGORI_PENGELUARAN = ['Operasional', 'Transport / parkir', 'Konsumsi staff', 'Perbaikan / alat', 'Kebersihan', 'Lainnya']
 const CARA_PERSETUJUAN = ['WA', 'Telepon', 'Lisan']
@@ -311,6 +311,7 @@ export function PengeluaranKasirView({ showToast, userName, setUserName, loadDat
   const [keperluan, setKeperluan] = useState('')
   const [kategori, setKategori] = useState('Operasional')
   const [sumber, setSumber] = useState('kas_kasir')
+  const [dibayarOleh, setDibayarOleh] = useState('')
   const [adaNota, setAdaNota] = useState(false)
   const [foto, setFoto] = useState('')
   const [fotoFile, setFotoFile] = useState(null)
@@ -333,7 +334,7 @@ export function PengeluaranKasirView({ showToast, userName, setUserName, loadDat
       .then(({ data }) => { const n = (data || []).map(d => d.nama); setOwners(n); if (n[0]) setDisetujui(n[0]) })
   }, [])
 
-  const reset = () => { setJumlah(''); setKeperluan(''); setKategori('Operasional'); setAdaNota(false); setFoto(''); setFotoFile(null); setCatatan('') }
+  const reset = () => { setJumlah(''); setKeperluan(''); setKategori('Operasional'); setAdaNota(false); setFoto(''); setFotoFile(null); setCatatan(''); setDibayarOleh('') }
 
   const handleSave = async () => {
     if (!num(jumlah)) { showToast('❌ Isi jumlah'); return }
@@ -341,6 +342,7 @@ export function PengeluaranKasirView({ showToast, userName, setUserName, loadDat
     if (!disetujui.trim()) { showToast('❌ Isi siapa yang menyetujui'); return }
     if (!yangInput.trim()) { showToast('❌ Isi nama yang input'); return }
     if (adaNota && !foto) { showToast('❌ Kamu centang "ada nota", fotonya mana?'); return }
+    if (sumber === 'talangan' && !dibayarOleh.trim()) { showToast('❌ Isi siapa yang menalangi'); return }
     setSaving(true)
     setUserName(yangInput)
     try {
@@ -349,6 +351,7 @@ export function PengeluaranKasirView({ showToast, userName, setUserName, loadDat
       const id = generateId()
       const { error } = await supabase.from('pengeluaran_kasir').insert({
         id, tanggal, jumlah: num(jumlah), keperluan: keperluan.trim(), kategori, sumber_dana: sumber,
+        dibayar_oleh: sumber === 'talangan' ? dibayarOleh.trim() : null, status_ganti: sumber === 'talangan' ? 'belum' : null,
         ada_nota: adaNota, disetujui_oleh: disetujui.trim(), cara_persetujuan: cara,
         foto: fotoUrl || null, catatan: catatan.trim() || null, yang_input: yangInput,
       })
@@ -400,9 +403,17 @@ export function PengeluaranKasirView({ showToast, userName, setUserName, loadDat
               <select value={sumber} onChange={e => setSumber(e.target.value)} style={S.input}>
                 <option value="kas_kasir">🏪 Kas kasir</option>
                 <option value="petty_cash">💵 Petty cash</option>
+                <option value="transfer_toko">🏦 Transfer rekening toko</option>
+                <option value="qris_toko">📱 QRIS toko</option>
+                <option value="talangan">🙋 Ditalangi dulu</option>
               </select>
             </FormRow>
           </div>
+          {sumber === 'talangan' && (
+            <FormRow label="Siapa yang bayar dulu? *" hint='Dicatat sebagai hutang toko ke orang itu sampai owner menandai "sudah diganti".'>
+              <input value={dibayarOleh} onChange={e => setDibayarOleh(e.target.value)} placeholder="Tissa / Diandra / nama staff" style={{ ...S.input, background: C.yellowBg, borderColor: C.yellowBorder }} />
+            </FormRow>
+          )}
 
           <div style={{ background: C.yellowBg, border: `1px solid ${C.yellowBorder}`, borderRadius: '8px', padding: '10px 12px', marginBottom: '10px' }}>
             <div style={{ fontSize: '11px', color: C.yellow, fontWeight: 600, marginBottom: '8px' }}>✅ Persetujuan owner (wajib)</div>
@@ -464,7 +475,7 @@ export function PengeluaranKasirView({ showToast, userName, setUserName, loadDat
                 <div style={{ flex: 1 }}>
                   <div style={{ fontSize: '13px', fontWeight: 600 }}>{p.keperluan}</div>
                   <div style={{ fontSize: '11px', color: C.text3, marginTop: '2px' }}>
-                    {formatTanggalID(p.tanggal)} · {p.kategori} · {SUMBER_DANA_LABEL[p.sumber_dana] || p.sumber_dana}
+                    {formatTanggalID(p.tanggal)} · {p.kategori} · {sumberText(p)}
                   </div>
                   <div style={{ fontSize: '11px', color: C.text3, marginTop: '2px' }}>
                     ✅ {p.disetujui_oleh} via {p.cara_persetujuan} · input {p.yang_input}
@@ -532,7 +543,7 @@ export function RekapHarianView({ bahanBaku, showToast, setView }) {
     belanjaRows.push({
       nota_id: b.id, bahan_id: it.bahan_id, nama: it.nama, jumlah: it.jumlah, satuan: it.satuan, harga: it.harga,
       kode: bahan?.kode_accurate || '', nama_acc: bahan?.nama_accurate || '',
-      sumber: SUMBER_DANA_LABEL[b.sumber_dana] || b.sumber_dana, jalur: b.jalur, yang_belanja: b.yang_belanja, foto: b.foto_nota,
+      sumber: sumberText(b), jalur: b.jalur, yang_belanja: b.yang_belanja, foto: b.foto_nota, dibayar_oleh: b.dibayar_oleh || '', status_ganti: b.status_ganti || '',
     })
   }))
   const tanpaKode = belanjaRows.filter(r => !r.kode && bahanById[r.bahan_id]?.status_accurate !== 'tidak_perlu').length
@@ -551,7 +562,7 @@ export function RekapHarianView({ bahanBaku, showToast, setView }) {
     belanjaRows.forEach(r => L.push(`  ${r.kode || '[tanpa kode]'} ${r.nama_acc || r.nama} — ${r.jumlah} ${r.satuan} — ${formatRupiah(r.harga)} — ${r.sumber}`))
     L.push('')
     L.push(`PENGELUARAN KASIR (${pengeluaran.length}, ${formatRupiah(totalPengeluaran)})`)
-    pengeluaran.forEach(p => L.push(`  ${p.keperluan} — ${formatRupiah(p.jumlah)} — ${p.kategori} — ${SUMBER_DANA_LABEL[p.sumber_dana] || p.sumber_dana} — acc ${p.disetujui_oleh} (${p.cara_persetujuan})${p.ada_nota ? ' — ada nota' : ' — tanpa nota'}`))
+    pengeluaran.forEach(p => L.push(`  ${p.keperluan} — ${formatRupiah(p.jumlah)} — ${p.kategori} — ${sumberText(p)} — acc ${p.disetujui_oleh} (${p.cara_persetujuan})${p.ada_nota ? ' — ada nota' : ' — tanpa nota'}`))
     L.push('')
     L.push(`WASTE (${waste.length}, nilai ± ${formatRupiah(nilaiWaste)})`)
     waste.forEach(w => { const b = bahanById[w.bahan_id]; L.push(`  ${b?.kode_accurate || '[tanpa kode]'} ${b?.nama || w.bahan_id} — ${w.jumlah} ${b?.satuan_dasar || ''} — ${w.alasan}`) })
@@ -585,12 +596,12 @@ export function RekapHarianView({ bahanBaku, showToast, setView }) {
     XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(ringkasan), 'Ringkasan')
     XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(belanjaRows.map(r => ({
       Tanggal: tanggal, 'Kode Accurate': r.kode, 'Nama Accurate': r.nama_acc, 'Nama di App': r.nama,
-      Jumlah: r.jumlah, Satuan: r.satuan, 'Total Harga': r.harga, 'Sumber Dana': r.sumber, Jalur: r.jalur,
+      Jumlah: r.jumlah, Satuan: r.satuan, 'Total Harga': r.harga, 'Sumber Dana': r.sumber, 'Ditalangi Oleh': r.dibayar_oleh, 'Status Ganti': r.status_ganti, Jalur: r.jalur,
       'Yang Belanja': r.yang_belanja, 'Foto Nota': r.foto || '',
     }))), 'Belanja')
     XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(pengeluaran.map(p => ({
       Tanggal: p.tanggal, Keperluan: p.keperluan, Jumlah: p.jumlah, Kategori: p.kategori,
-      'Sumber Dana': SUMBER_DANA_LABEL[p.sumber_dana] || p.sumber_dana, 'Ada Nota': p.ada_nota ? 'Y' : 'T',
+      'Sumber Dana': SUMBER_DANA_LABEL[p.sumber_dana] || p.sumber_dana, 'Ditalangi Oleh': p.dibayar_oleh || '', 'Status Ganti': p.status_ganti || '', 'Ada Nota': p.ada_nota ? 'Y' : 'T',
       'Disetujui Oleh': p.disetujui_oleh, 'Cara Persetujuan': p.cara_persetujuan, 'Yang Input': p.yang_input, Catatan: p.catatan || '', Foto: p.foto || '',
     }))), 'Pengeluaran Kasir')
     XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(waste.map(w => {
@@ -665,7 +676,7 @@ export function RekapHarianView({ bahanBaku, showToast, setView }) {
         {belanja.map(b => (
           <div key={b.id} style={{ borderTop: `1px solid ${C.panel2}`, paddingTop: '8px', marginTop: '8px' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '11px', color: C.text3, marginBottom: '4px' }}>
-              <span>{b.yang_belanja} · {b.jalur} · {SUMBER_DANA_LABEL[b.sumber_dana] || b.sumber_dana}</span>
+              <span>{b.yang_belanja} · {b.jalur} · {sumberText(b)}</span>
               <span style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
                 <strong style={{ color: C.text }}>{formatRupiah(b.total_harga)}</strong>
                 {b.foto_nota && <button onClick={() => setFotoModal(b.foto_nota)} style={{ ...S.btn, ...S.btnSecondary, padding: '2px 8px', fontSize: '10px' }}>📷</button>}
@@ -692,7 +703,7 @@ export function RekapHarianView({ bahanBaku, showToast, setView }) {
           <div key={p.id} style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px', padding: '4px 0', borderTop: `1px solid ${C.panel2}` }}>
             <span style={{ flex: 1 }}>
               {p.keperluan}
-              <div style={{ fontSize: '10px', color: C.text3 }}>{p.kategori} · {SUMBER_DANA_LABEL[p.sumber_dana] || p.sumber_dana} · acc {p.disetujui_oleh} ({p.cara_persetujuan}){p.ada_nota ? ' · 🧾' : ''}</div>
+              <div style={{ fontSize: '10px', color: C.text3 }}>{p.kategori} · {sumberText(p)} · acc {p.disetujui_oleh} ({p.cara_persetujuan}){p.ada_nota ? ' · 🧾' : ''}</div>
             </span>
             <span style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
               <strong>{formatRupiah(p.jumlah)}</strong>
@@ -725,6 +736,58 @@ export function RekapHarianView({ bahanBaku, showToast, setView }) {
           <img src={fotoModal} alt="foto" style={{ maxWidth: '100%', maxHeight: '90vh', borderRadius: '8px' }} />
         </div>
       )}
+    </div>
+  )
+}
+
+// =====================================================
+// 4. TALANGAN (Owner) — uang pribadi yang dipakai dulu untuk toko, belum diganti
+// =====================================================
+export function TalanganCard({ showToast }) {
+  const [rows, setRows] = useState([])
+  const [open, setOpen] = useState(false)
+  const load = async () => {
+    const [a, b] = await Promise.all([
+      supabase.from('belanja').select('id, tanggal, total_harga, dibayar_oleh, yang_belanja, catatan').eq('status_ganti', 'belum').order('tanggal'),
+      supabase.from('pengeluaran_kasir').select('id, tanggal, jumlah, dibayar_oleh, keperluan').eq('status_ganti', 'belum').order('tanggal'),
+    ])
+    setRows([
+      ...(a.data || []).map(r => ({ tabel: 'belanja', id: r.id, tanggal: r.tanggal, jumlah: num(r.total_harga), oleh: r.dibayar_oleh || '?', ket: 'Belanja bahan' + (r.catatan ? ' · ' + r.catatan : '') })),
+      ...(b.data || []).map(r => ({ tabel: 'pengeluaran_kasir', id: r.id, tanggal: r.tanggal, jumlah: num(r.jumlah), oleh: r.dibayar_oleh || '?', ket: r.keperluan })),
+    ].sort((x, y) => (x.tanggal || '').localeCompare(y.tanggal || '')))
+  }
+  useEffect(() => { load() }, [])
+  const tandaiGanti = async (r) => {
+    const { error } = await supabase.from(r.tabel).update({ status_ganti: 'sudah', tanggal_ganti: formatTanggal() }).eq('id', r.id)
+    if (error) { showToast('❌ ' + error.message); return }
+    showToast(`✅ ${formatRupiah(r.jumlah)} ke ${r.oleh} ditandai sudah diganti`)
+    load()
+  }
+  if (rows.length === 0) return null
+  const total = rows.reduce((s, r) => s + r.jumlah, 0)
+  const perOrang = {}
+  rows.forEach(r => { perOrang[r.oleh] = (perOrang[r.oleh] || 0) + r.jumlah })
+  return (
+    <div style={{ background: C.yellowBg, border: `1px solid ${C.yellowBorder}`, borderRadius: '12px', padding: '12px 14px', marginBottom: '14px' }}>
+      <div onClick={() => setOpen(o => !o)} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', cursor: 'pointer' }}>
+        <div>
+          <div style={{ fontSize: '13px', fontWeight: 600, color: C.yellow }}>🙋 Talangan belum diganti</div>
+          <div style={{ fontSize: '11px', color: C.yellow }}>{Object.entries(perOrang).map(([n, v]) => `${n}: ${formatRupiah(v)}`).join(' · ')}</div>
+        </div>
+        <div style={{ textAlign: 'right' }}>
+          <div style={{ fontSize: '15px', fontWeight: 700, color: C.yellow }}>{formatRupiah(total)}</div>
+          <div style={{ fontSize: '10px', color: C.yellow }}>{rows.length} catatan · {open ? 'tutup ▲' : 'lihat ▼'}</div>
+        </div>
+      </div>
+      {open && rows.map(r => (
+        <div key={r.tabel + r.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '8px', borderTop: `1px solid ${C.yellowBorder}`, padding: '8px 0', fontSize: '12px' }}>
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div style={{ fontWeight: 600 }}>{r.oleh} · {formatRupiah(r.jumlah)}</div>
+            <div style={{ fontSize: '10px', color: C.text3 }}>{formatTanggalID(r.tanggal)} · {r.ket}</div>
+          </div>
+          <button onClick={() => tandaiGanti(r)} style={{ ...S.btn, ...S.btnSuccess, padding: '6px 10px', fontSize: '11px' }}>✓ Sudah diganti</button>
+        </div>
+      ))}
     </div>
   )
 }

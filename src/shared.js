@@ -72,5 +72,11 @@ export async function uploadFotoToStorage(file, folder) {
 export const SUMBER_DANA_LABEL = {
   kas_kasir: 'Kas kasir',
   petty_cash: 'Petty cash',
+  transfer_toko: 'Transfer rekening toko',
+  qris_toko: 'QRIS toko',
+  talangan: 'Ditalangi dulu',
   transfer_owner: 'Transfer owner',
 }
+
+// Teks sumber dana + siapa yang menalangi (untuk rekap & riwayat)
+export const sumberText = (r) => (SUMBER_DANA_LABEL[r?.sumber_dana] || r?.sumber_dana || '') + (r?.dibayar_oleh ? ` oleh ${r.dibayar_oleh}` + (r.status_ganti === 'sudah' ? ' (sudah diganti)' : ' (belum diganti)') : '')

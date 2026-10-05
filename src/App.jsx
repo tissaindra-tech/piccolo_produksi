@@ -2,7 +2,7 @@ import { useState, useEffect, useMemo } from 'react'
 import { supabase, generateId, formatTanggal, formatTanggalID, formatRupiah, daysFromNow } from './supabase'
 import * as XLSX from 'xlsx'
 import { C, S, uploadFotoToStorage } from './shared'
-import { PenjualanView, PengeluaranKasirView, RekapHarianView } from './Kasir'
+import { PenjualanView, PengeluaranKasirView, RekapHarianView, TalanganCard } from './Kasir'
 
 // =====================================================
 // PICCOLO CORNER v3 - Aplikasi Produksi & Inventory
@@ -17,6 +17,8 @@ const FALLBACK_USERS = [
 const THRESHOLD_KECIL = 100000
 const CLOSING_LOCK_DAYS = 4
 const NOTA_EDIT_LOCK_DAYS = 30  // nota tidak bisa diedit setelah 30 hari
+const HARI = ['Minggu', 'Senin', 'Selasa', 'Rabu', 'Kamis', 'Jumat', 'Sabtu']
+const ALASAN_WASTE = ['Busuk / expired', 'Gosong', 'Tumpah / jatuh', 'Salah masak', 'Lainnya']
 
 // Cek apakah nota masih bisa diedit
 const isNotaEditable = (tanggal) => {
@@ -342,6 +344,8 @@ export default function App() {
   const [waste, setWaste] = useState([])
   const [auditLog, setAuditLog] = useState([])
   const [penjualan, setPenjualan] = useState([])
+  const [lastClosingTanggal, setLastClosingTanggal] = useState(null)
+  const [settings, setSettings] = useState({})
   const [loading, setLoading] = useState(false)  // false dulu — true hanya setelah login
   const [toast, setToast] = useState('')
   const [lazyLoaded, setLazyLoaded] = useState({})
@@ -351,18 +355,22 @@ export default function App() {
   const loadDataCritical = async () => {
     setLoading(true)
     try {
-      const [b, p, bl, c, pj] = await Promise.all([
+      const [b, p, bl, c, pj, lc, st] = await Promise.all([
         supabase.from('bahan_baku').select('*').eq('is_active', true).order('nama'),
         supabase.from('produksi').select('*').order('created_at', { ascending: false }).limit(60),
         supabase.from('belanja').select('*').order('created_at', { ascending: false }).limit(50),
-        supabase.from('closing_stok').select('*').order('created_at', { ascending: false }).limit(60),
+        supabase.from('closing_stok').select('*').gte('tanggal', formatTanggal(new Date(Date.now() - 9 * 86400000))).order('created_at', { ascending: false }),
         supabase.from('penjualan_harian').select('*').order('tanggal', { ascending: false }).limit(40),
+        supabase.from('closing_stok').select('tanggal').order('created_at', { ascending: false }).limit(1),
+        supabase.from('app_settings').select('*'),
       ])
       setBahanBaku(b.data || [])
       setProduksi(p.data || [])
       setBelanja(bl.data || [])
       setClosing(c.data || [])
       setPenjualan(pj.data || [])
+      setLastClosingTanggal(lc.data?.[0]?.tanggal || null)
+      setSettings(Object.fromEntries((st.data || []).map(r => [r.id, r.value])))
     } catch (err) {
       console.error('loadDataCritical error:', err)
     } finally {
@@ -403,7 +411,7 @@ export default function App() {
   useEffect(() => {
     if (!role) return
     loadDataCritical()
-    const channels = ['bahan_baku', 'produksi', 'belanja', 'closing_stok', 'penjualan_harian'].map(t =>
+    const channels = ['bahan_baku', 'produksi', 'belanja', 'closing_stok', 'penjualan_harian', 'app_settings'].map(t =>
       supabase.channel(`ch-${t}`).on('postgres_changes', { event: '*', schema: 'public', table: t }, () => loadDataCritical()).subscribe()
     )
     return () => channels.forEach(c => supabase.removeChannel(c))
@@ -436,7 +444,29 @@ export default function App() {
     } catch (e) { console.error(e) }
   }
 
-  const lastClosingDate = closing[0]?.tanggal || null
+  const lastClosingDate = lastClosingTanggal || closing[0]?.tanggal || null
+
+  // ── Stok opname mingguan ──
+  const opnameHari = Number(settings?.opname?.hari ?? 1)
+  const opname = useMemo(() => {
+    const now = new Date(); const dow = now.getDay()
+    const sinceLast = (dow - opnameHari + 7) % 7          // 0 = hari ini hari opname
+    const daysTo = (opnameHari - dow + 7) % 7
+    const lastDate = formatTanggal(new Date(now.getTime() - sinceLast * 86400000))
+    const nextDate = formatTanggal(new Date(now.getTime() + (daysTo || 7) * 86400000))
+    const total = bahanBaku.filter(b => b.is_active).length
+    const rows = closing.filter(c => c.tanggal === lastDate)
+    const counted = new Set(rows.map(c => c.bahan_id)).size
+    const perOrang = {}
+    rows.forEach(c => { perOrang[c.yang_closing] = (perOrang[c.yang_closing] || 0) + 1 })
+    return { hari: opnameHari, isToday: sinceLast === 0, sinceLast, daysTo, lastDate, nextDate, total, counted, lengkap: total > 0 && counted >= total, perOrang }
+  }, [opnameHari, bahanBaku, closing])
+
+  const saveSetting = async (id, value) => {
+    const { error } = await supabase.from('app_settings').upsert({ id, value, updated_at: new Date().toISOString() })
+    if (error) { showToast('❌ ' + error.message); return }
+    setSettings(s => ({ ...s, [id]: value }))
+  }
   const daysSinceClosing = useMemo(() => {
     if (!lastClosingDate) return 0
     return Math.floor((new Date() - new Date(lastClosingDate)) / (1000 * 60 * 60 * 24))
@@ -450,7 +480,7 @@ export default function App() {
   const bisaPenjualan = role === 'owner' || !!currentUser?.bisa_penjualan
 
   const props = {
-    role, userName, setUserName, view, setView, currentUser, bisaPenjualan,
+    role, userName, setUserName, view, setView, currentUser, bisaPenjualan, opname, saveSetting,
     bahanBaku, produksi, belanja, closing, waste, auditLog, penjualan,
     loadData, showToast, logAudit, lazyLoaded,
     daysSinceClosing, isLocked,
@@ -684,12 +714,16 @@ function HomeView(props) {
   return <StaffHome {...props} />
 }
 
-function StaffHome({ bahanBaku, produksi, belanja, closing, penjualan, daysSinceClosing, setView, userName, bisaPenjualan }) {
+function StaffHome({ bahanBaku, produksi, belanja, closing, penjualan, daysSinceClosing, setView, userName, bisaPenjualan, opname }) {
   const today = formatTanggal()
-  const totalBahan = bahanBaku.filter(b => b.is_active).length
+  // Hari biasa: hanya bahan 'harian'. Hari opname: semua bahan.
+  const isOpname = !!opname?.isToday
+  const targetBahan = bahanBaku.filter(b => b.is_active && (isOpname || b.frekuensi_hitung === 'harian'))
+  const totalBahan = targetBahan.length
+  const targetIds = new Set(targetBahan.map(b => b.id))
 
-  // Hitung update stok hari ini
-  const updatedToday = new Set(closing.filter(c => c.tanggal === today).map(c => c.bahan_id))
+  // Hitung update stok hari ini (hanya bahan yang jadi target hari ini)
+  const updatedToday = new Set(closing.filter(c => c.tanggal === today && targetIds.has(c.bahan_id)).map(c => c.bahan_id))
   const stokProgress = totalBahan > 0 ? Math.round((updatedToday.size / totalBahan) * 100) : 0
   const stokSelesai = stokProgress === 100
 
@@ -761,6 +795,23 @@ function StaffHome({ bahanBaku, produksi, belanja, closing, penjualan, daysSince
 
   return (
     <div>
+      {/* Pengingat stok opname mingguan */}
+      {opname && !isOpname && opname.daysTo === 1 && (
+        <div style={{ background: C.yellowBg, border: `1px solid ${C.yellowBorder}`, color: C.yellow, padding: '10px 12px', borderRadius: '8px', fontSize: '12px', marginBottom: '12px' }}>
+          📦 <strong>Besok hari stok opname mingguan.</strong> Semua {opname.total} bahan dihitung, bukan cuma yang harian. Siapkan waktu lebih.
+        </div>
+      )}
+      {opname && isOpname && !opname.lengkap && (
+        <div onClick={() => setView('closing')} style={{ background: C.blueBg, border: `1px solid ${C.blueBorder}`, color: C.blue, padding: '10px 12px', borderRadius: '8px', fontSize: '12px', marginBottom: '12px', cursor: 'pointer' }}>
+          📦 <strong>Hari ini stok opname mingguan.</strong> {opname.counted} / {opname.total} bahan sudah dihitung. Tap untuk lanjut →
+        </div>
+      )}
+      {opname && !isOpname && opname.sinceLast <= 3 && !opname.lengkap && (
+        <div onClick={() => setView('closing')} style={{ background: C.redBg, border: `1px solid ${C.redBorder}`, color: C.red, padding: '10px 12px', borderRadius: '8px', fontSize: '12px', marginBottom: '12px', cursor: 'pointer' }}>
+          ⚠️ <strong>Stok opname hari {HARI[opname.hari]} belum lengkap:</strong> {opname.counted} / {opname.total}. Buka Update Stok → pilih "Semua bahan" →
+        </div>
+      )}
+
       {/* Lock warning */}
       {daysSinceClosing >= 3 && (
         <div style={{ background: C.redBg, border: `1px solid ${C.redBorder}`, color: C.red, padding: '10px 12px', borderRadius: '8px', fontSize: '12px', marginBottom: '12px' }}>
@@ -828,7 +879,7 @@ function StaffHome({ bahanBaku, produksi, belanja, closing, penjualan, daysSince
           </div>
           <div style={{ flex: 1 }}>
             <div style={{ fontSize: '13px', fontWeight: 500, color: stokSelesai ? C.text3 : C.text, textDecoration: stokSelesai ? 'line-through' : 'none' }}>
-              Update stok harian
+              {isOpname ? '📦 Stok opname mingguan — hitung SEMUA bahan' : 'Update stok harian (bahan cepat habis)'}
             </div>
             <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginTop: '4px' }}>
               <div style={{ flex: 1, height: '3px', background: C.panel2, borderRadius: '99px', overflow: 'hidden' }}>
@@ -1028,7 +1079,7 @@ function BigBtn({ color, icon, label, onClick }) {
 }
 
 function OwnerHome(props) {
-  const { bahanBaku, produksi, belanja, setView } = props
+  const { bahanBaku, produksi, belanja, setView, opname, saveSetting } = props
   const [showStokLow, setShowStokLow] = useState(false)
   const stokRendah = bahanBaku.filter(b => b.stok_saat_ini < b.stok_minimum)
   const expiring = bahanBaku.filter(b => {
@@ -1046,6 +1097,38 @@ function OwnerHome(props) {
         <StatCard color="red" label="Stok Low" value={stokRendah.length} onClick={() => setShowStokLow(true)} />
         <StatCard color="red" label="Expiring" value={expiring.length} />
       </div>
+
+      {/* Stok opname mingguan */}
+      {opname && (
+        <div style={{ background: C.panel, border: `1px solid ${C.border}`, borderRadius: '12px', padding: '12px 14px', marginBottom: '14px' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '8px', marginBottom: '8px' }}>
+            <div>
+              <div style={{ fontSize: '13px', fontWeight: 600 }}>📦 Stok opname mingguan</div>
+              <div style={{ fontSize: '11px', color: C.text3 }}>
+                {opname.isToday ? 'Hari ini' : `Berikutnya ${HARI[opname.hari]}, ${formatTanggalID(opname.nextDate)}`}
+              </div>
+            </div>
+            <select value={opname.hari} onChange={e => saveSetting('opname', { hari: Number(e.target.value) })}
+              style={{ ...S.input, width: 'auto', fontSize: '12px', padding: '6px 8px' }}>
+              {HARI.map((h, i) => <option key={i} value={i}>Tiap {h}</option>)}
+            </select>
+          </div>
+          <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px', marginBottom: '4px' }}>
+            <span>Opname {formatTanggalID(opname.lastDate)}</span>
+            <strong style={{ color: opname.lengkap ? C.green : C.yellow }}>{opname.counted} / {opname.total} bahan {opname.lengkap ? '✅' : ''}</strong>
+          </div>
+          <div style={{ height: '6px', background: C.panel2, borderRadius: '99px', overflow: 'hidden' }}>
+            <div style={{ width: `${opname.total ? Math.min(100, Math.round(opname.counted / opname.total * 100)) : 0}%`, height: '100%', background: opname.lengkap ? C.green : C.yellowBorder }} />
+          </div>
+          {Object.keys(opname.perOrang).length > 0 && (
+            <div style={{ fontSize: '11px', color: C.text3, marginTop: '6px' }}>
+              {Object.entries(opname.perOrang).sort((a, b) => b[1] - a[1]).map(([n, c]) => `${n}: ${c}`).join(' · ')}
+            </div>
+          )}
+        </div>
+      )}
+
+      <TalanganCard showToast={props.showToast} />
 
       {showStokLow && (
         <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'flex-end', justifyContent: 'center', zIndex: 1000 }}
@@ -1883,6 +1966,7 @@ function InputNotaView({ bahanBaku, showToast, loadData, logAudit, setView, user
   const [tanggal, setTanggal] = useState(formatTanggal())
   const [jalur, setJalur] = useState('kecil')
   const [sumberDana, setSumberDana] = useState('kas_kasir')
+  const [dibayarOleh, setDibayarOleh] = useState('')
   const [yangBelanja, setYangBelanja] = useState(userName)
   const [items, setItems] = useState([{ bahan_id: '', jumlah: '', harga: '', satuan: '', tanggal_expired: '' }])
   const [foto, setFoto] = useState('')
@@ -2015,6 +2099,7 @@ Aturan:
   const handleSubmit = async () => {
     if (!yangBelanja) { showToast('❌ Isi nama'); return }
     if (!foto) { showToast('❌ Foto nota wajib'); return }
+    if (sumberDana === 'talangan' && !dibayarOleh.trim()) { showToast('❌ Isi siapa yang menalangi'); return }
     const validItems = items.filter(i => i.bahan_id && i.jumlah && i.harga)
     if (validItems.length === 0) { showToast('❌ Minimal 1 item'); return }
     if (jalur === 'kecil' && totalHarga >= THRESHOLD_KECIL) {
@@ -2041,6 +2126,8 @@ Aturan:
       }
       const { error: belanjaErr } = await supabase.from('belanja').insert({
         id: newId, tanggal, jalur, sumber_dana: sumberDana,
+        dibayar_oleh: sumberDana === 'talangan' ? dibayarOleh.trim() : null,
+        status_ganti: sumberDana === 'talangan' ? 'belum' : null,
         total_harga: totalHarga, yang_belanja: yangBelanja,
         foto_nota: fotoUrl, catatan, items: itemsWithName, created_by: yangBelanja,
       })
@@ -2131,8 +2218,16 @@ Aturan:
         <select value={sumberDana} onChange={e => setSumberDana(e.target.value)} style={S.input}>
           <option value="kas_kasir">🏪 Kas kasir</option>
           <option value="petty_cash">💵 Petty cash</option>
-          <option value="transfer_owner">💸 Owner transfer</option>
+          <option value="transfer_toko">🏦 Transfer rekening toko (BCA)</option>
+          <option value="qris_toko">📱 QRIS toko</option>
+          <option value="talangan">🙋 Ditalangi dulu (Tissa / Diandra / staff)</option>
+          <option value="transfer_owner">💸 Transfer owner (lama)</option>
         </select>
+        {sumberDana === 'talangan' && (
+          <input value={dibayarOleh} onChange={e => setDibayarOleh(e.target.value)} placeholder="Siapa yang bayar dulu? misal: Tissa, Diandra, Hans"
+            style={{ ...S.input, marginTop: '6px', background: C.yellowBg, borderColor: C.yellowBorder }} />
+        )}
+        {sumberDana === 'talangan' && <div style={{ fontSize: '10px', color: C.yellow, marginTop: '3px' }}>Dicatat sebagai hutang toko ke orang itu, sampai owner menandai "sudah diganti".</div>}
       </FormRow>
 
       <FormRow label="Yang belanja"><input type="text" value={yangBelanja} onChange={e => setYangBelanja(e.target.value)} placeholder="Nama..." style={S.input} /></FormRow>
@@ -2240,7 +2335,13 @@ Aturan:
 // =====================================================
 // UPDATE STOK HARIAN (menggantikan Closing lama)
 // =====================================================
-function ClosingView({ bahanBaku, closing, showToast, loadData, logAudit, userName, setUserName }) {
+function ClosingView({ bahanBaku, closing, showToast, loadData, logAudit, userName, setUserName, opname }) {
+  const [scope, setScope] = useState(opname?.isToday ? 'semua' : 'harian')
+  const [wastePrompt, setWastePrompt] = useState(null)   // { b, aktual, sebelum }
+  const [wasteQty, setWasteQty] = useState('')
+  const [wasteAlasan, setWasteAlasan] = useState(ALASAN_WASTE[0])
+  const nHarian = bahanBaku.filter(b => b.is_active && b.frekuensi_hitung === 'harian').length
+  const nSemua = bahanBaku.filter(b => b.is_active).length
   const [search, setSearch] = useState('')
   const [filterDiv, setFilterDiv] = useState('all')
   const [filterKat, setFilterKat] = useState('all')
@@ -2264,7 +2365,8 @@ function ClosingView({ bahanBaku, closing, showToast, loadData, logAudit, userNa
     const divOk = filterDiv === 'all' || b.divisi === filterDiv || b.divisi === 'Both'
     const katOk = filterKat === 'all' || b.kategori === filterKat
     const searchOk = !search.trim() || b.nama.toLowerCase().includes(search.toLowerCase())
-    return divOk && katOk && searchOk
+    const frekOk = scope === 'semua' || b.frekuensi_hitung === 'harian'
+    return divOk && katOk && searchOk && frekOk
   })
 
   const belumUpdateHariIni = filtered.filter(b => {
@@ -2276,7 +2378,7 @@ function ClosingView({ bahanBaku, closing, showToast, loadData, logAudit, userNa
   const [onlyPending, setOnlyPending] = useState(false)
   const displayList = onlyPending ? belumUpdateHariIni : filtered
 
-  const handleSave = async (b) => {
+  const handleSave = async (b, wasteInfo) => {
     const val = inputs[b.id]
     const who = names[b.id] || userName
     if (val === undefined || val === '') { showToast('❌ Isi angka stok aktual dulu'); return }
@@ -2284,6 +2386,13 @@ function ClosingView({ bahanBaku, closing, showToast, loadData, logAudit, userNa
     const aktual = Number(val)
     const sebelum = b.stok_saat_ini || 0
     const selisih = aktual - sebelum
+
+    // Stok turun → tanya dulu: ada yang dibuang / rusak?
+    if (selisih < 0 && wasteInfo === undefined) {
+      setWasteQty(''); setWasteAlasan(ALASAN_WASTE[0])
+      setWastePrompt({ b, aktual, sebelum, who })
+      return
+    }
 
     setSaving(s => ({ ...s, [b.id]: true }))
     setUserName(who)
@@ -2299,9 +2408,18 @@ function ClosingView({ bahanBaku, closing, showToast, loadData, logAudit, userNa
         catatan: selisih > 0 ? 'stok naik' : selisih < 0 ? 'koreksi stok' : 'tidak ada perubahan',
         // kolom lama diset 0 supaya tidak null
         qty_bumbu: 0, qty_terjual: 0, qty_staff: 0,
-        qty_wasted_kadaluarsa: 0, qty_wasted_busuk: 0,
+        qty_wasted_kadaluarsa: 0, qty_wasted_busuk: wasteInfo?.jumlah || 0,
       })
       await supabase.from('bahan_baku').update({ stok_saat_ini: aktual }).eq('id', b.id)
+      if (wasteInfo?.jumlah > 0) {
+        // Stok aktual sudah mencerminkan barang yang dibuang, jadi stok tidak dikurangi lagi
+        const wid = generateId()
+        await supabase.from('waste').insert({
+          id: wid, tanggal: todayStr, bahan_id: b.id, jumlah: wasteInfo.jumlah, alasan: wasteInfo.alasan,
+          catatan: 'Dicatat saat update stok', foto: '', yang_catat: who,
+        })
+        await logAudit('waste', wid, 'create', b.id, b.nama, { jumlah: wasteInfo.jumlah, alasan: wasteInfo.alasan, dari: 'update_stok' })
+      }
       await logAudit('closing_stok', b.id, 'update_stok', sebelum, aktual, { yang_catat: who, selisih })
       showToast(`✅ ${b.nama}: ${sebelum} → ${aktual} ${b.satuan_dasar}`)
       // Clear input setelah berhasil
@@ -2395,9 +2513,24 @@ function ClosingView({ bahanBaku, closing, showToast, loadData, logAudit, userNa
           📊 History
         </button>
       </div>
-      <p style={{ fontSize: '12px', color: C.text3, marginBottom: '12px' }}>
+      <p style={{ fontSize: '12px', color: C.text3, marginBottom: '10px' }}>
         Isi stok fisik aktual → tap Simpan per item
       </p>
+
+      {/* Cakupan: bahan harian saja, atau semua (hari opname) */}
+      <div style={{ display: 'flex', gap: '5px', marginBottom: '10px' }}>
+        {[['harian', `☀️ Harian (${nHarian})`], ['semua', `📦 Semua bahan (${nSemua})`]].map(([k, l]) => (
+          <button key={k} onClick={() => setScope(k)} style={{
+            flex: 1, padding: '8px 10px', fontSize: '12px', borderRadius: '8px', cursor: 'pointer', fontWeight: scope === k ? 600 : 400,
+            border: `1.5px solid ${scope === k ? C.text : C.border}`, background: scope === k ? C.text : 'transparent', color: scope === k ? C.panel : C.text2,
+          }}>{l}</button>
+        ))}
+      </div>
+      {opname?.isToday && (
+        <div style={{ background: C.blueBg, border: `1px solid ${C.blueBorder}`, color: C.blue, borderRadius: '8px', padding: '9px 12px', fontSize: '12px', marginBottom: '10px' }}>
+          📦 <strong>Hari ini stok opname mingguan.</strong> Semua bahan harus dihitung. {opname.counted} / {opname.total} selesai.
+        </div>
+      )}
 
       {/* Info belum update */}
       {belumUpdateHariIni.length > 0 && (
@@ -2533,6 +2666,38 @@ function ClosingView({ bahanBaku, closing, showToast, loadData, logAudit, userNa
           </div>
         )
       })}
+
+      {/* Tanya waste saat stok turun */}
+      {wastePrompt && (
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'flex-end', justifyContent: 'center', zIndex: 1000 }}
+          onClick={() => setWastePrompt(null)}>
+          <div style={{ background: C.panel, borderRadius: '16px 16px 0 0', padding: '20px', width: '100%', maxWidth: '520px' }} onClick={e => e.stopPropagation()}>
+            <div style={{ fontSize: '15px', fontWeight: 600, marginBottom: '2px' }}>{wastePrompt.b.nama}</div>
+            <div style={{ fontSize: '12px', color: C.text3, marginBottom: '12px' }}>
+              Stok turun dari {wastePrompt.sebelum} ke {wastePrompt.aktual} {wastePrompt.b.satuan_dasar}. Ada yang dibuang atau rusak?
+            </div>
+            <div style={{ background: C.panel2, borderRadius: '10px', padding: '12px', marginBottom: '10px' }}>
+              <label style={S.label}>Kalau ada, berapa {wastePrompt.b.satuan_dasar} yang dibuang?</label>
+              <input type="number" inputMode="decimal" value={wasteQty} onChange={e => setWasteQty(e.target.value)} placeholder="0"
+                style={{ ...S.input, fontSize: '18px', textAlign: 'center', marginBottom: '8px' }} />
+              <div style={{ display: 'flex', gap: '5px', flexWrap: 'wrap' }}>
+                {ALASAN_WASTE.map(a => (
+                  <button key={a} onClick={() => setWasteAlasan(a)} style={{
+                    padding: '6px 10px', fontSize: '11px', borderRadius: '99px', cursor: 'pointer',
+                    border: `1px solid ${wasteAlasan === a ? C.red : C.border}`, background: wasteAlasan === a ? C.redBg : 'transparent', color: wasteAlasan === a ? C.red : C.text2, fontWeight: wasteAlasan === a ? 600 : 400,
+                  }}>{a}</button>
+                ))}
+              </div>
+            </div>
+            <div style={{ display: 'flex', gap: '8px' }}>
+              <button onClick={() => { const p = wastePrompt; setWastePrompt(null); handleSave(p.b, null) }}
+                style={{ ...S.btn, ...S.btnSecondary, flex: 1, padding: '12px' }}>Tidak ada, simpan</button>
+              <button disabled={!(Number(wasteQty) > 0)} onClick={() => { const p = wastePrompt; setWastePrompt(null); handleSave(p.b, { jumlah: Number(wasteQty), alasan: wasteAlasan }) }}
+                style={{ ...S.btn, ...S.btnDanger, flex: 1, padding: '12px', opacity: Number(wasteQty) > 0 ? 1 : 0.5 }}>🗑️ Catat waste & simpan</button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
@@ -2544,7 +2709,7 @@ function ClosingView({ bahanBaku, closing, showToast, loadData, logAudit, userNa
 // =====================================================
 // BAHAN FORM MODAL (Tambah/Edit Bahan Baku)
 // =====================================================
-function BahanFormModal({ mode, initial, onClose, showToast, loadData, logAudit, bahanBaku, userName }) {
+function BahanFormModal({ mode, initial, onClose, showToast, loadData, logAudit, bahanBaku, userName, role }) {
   const [nama, setNama] = useState(initial?.nama || '')
   const [kategori, setKategori] = useState(initial?.kategori || 'mentah')
   const [divisi, setDivisi] = useState(initial?.divisi || 'Kitchen')
@@ -2566,6 +2731,7 @@ function BahanFormModal({ mode, initial, onClose, showToast, loadData, logAudit,
   const [kodeAcc, setKodeAcc] = useState(initial?.kode_accurate || '')
   const [namaAcc, setNamaAcc] = useState(initial?.nama_accurate || '')
   const [statusAcc, setStatusAcc] = useState(initial?.status_accurate || '')
+  const [frekuensi, setFrekuensi] = useState(initial?.frekuensi_hitung || (initial?.kategori === 'mentah' ? 'mingguan' : 'harian'))
   const [yangCatat, setYangCatat] = useState(userName || '')
   const [submitting, setSubmitting] = useState(false)
 
@@ -2600,6 +2766,7 @@ function BahanFormModal({ mode, initial, onClose, showToast, loadData, logAudit,
         kode_accurate: kodeAcc.trim() || null,
         nama_accurate: namaAcc.trim() || null,
         status_accurate: kodeAcc.trim() ? 'terhubung' : (statusAcc || null),
+        frekuensi_hitung: frekuensi,
         is_active: true,
         updated_at: new Date().toISOString(),
       }
@@ -2662,6 +2829,18 @@ function BahanFormModal({ mode, initial, onClose, showToast, loadData, logAudit,
               <option value="Bar">Bar</option>
               <option value="Both">Both</option>
             </select>
+          </div>
+        </div>
+
+        <div style={{ marginBottom: '8px' }}>
+          <label style={S.label}>Dihitung kapan?</label>
+          <div style={{ display: 'flex', gap: '6px' }}>
+            {[['harian', '☀️ Tiap hari (cepat habis / busuk)'], ['mingguan', '📦 Saat opname mingguan saja']].map(([k, l]) => (
+              <button key={k} onClick={() => setFrekuensi(k)} style={{
+                flex: 1, padding: '8px 6px', fontSize: '11px', borderRadius: '8px', cursor: 'pointer', fontWeight: frekuensi === k ? 600 : 400,
+                border: `1.5px solid ${frekuensi === k ? C.text : C.border}`, background: frekuensi === k ? C.text : C.bg, color: frekuensi === k ? C.panel : C.text2,
+              }}>{l}</button>
+            ))}
           </div>
         </div>
 
@@ -2753,7 +2932,8 @@ function BahanFormModal({ mode, initial, onClose, showToast, loadData, logAudit,
           </div>
         )}
 
-        {/* Kaitan ke Accurate Online */}
+        {/* Kaitan ke Accurate Online (hanya owner) */}
+        {role === 'owner' && (
         <div style={{ background: kodeAcc ? C.greenBg : C.yellowBg, border: `1px solid ${kodeAcc ? C.greenBorder : C.yellowBorder}`, padding: '10px 12px', borderRadius: '8px', marginBottom: '8px' }}>
           <div style={{ fontSize: '11px', color: kodeAcc ? C.green : C.yellow, fontWeight: 600, marginBottom: '8px' }}>
             🔗 Kaitan ke Accurate {kodeAcc ? '' : '— belum diisi'}
@@ -2781,7 +2961,7 @@ function BahanFormModal({ mode, initial, onClose, showToast, loadData, logAudit,
           <p style={{ fontSize: '10px', color: C.text3, marginTop: '6px', marginBottom: 0 }}>
             Lihat di Accurate: Persediaan → Barang & Jasa → kolom Kode. Dipakai saat export ke Accurate.
           </p>
-        </div>
+        </div>)}
 
         <label style={S.label}>Catatan</label>
         <textarea value={catatan} onChange={e => setCatatan(e.target.value)} placeholder="Optional: supplier, tips, dll" rows={2} style={{ ...S.input, resize: 'vertical', marginBottom: '8px' }} />
@@ -2803,7 +2983,15 @@ function BahanFormModal({ mode, initial, onClose, showToast, loadData, logAudit,
 // =====================================================
 // STOK LIST VIEW (with Tambah/Edit Bahan)
 // =====================================================
-function StokListView({ bahanBaku, showToast, loadData, logAudit, userName }) {
+function StokListView({ bahanBaku, showToast, loadData, logAudit, userName, role }) {
+  const [filterFrek, setFilterFrek] = useState('all')
+  const toggleFrek = async (b) => {
+    const next = b.frekuensi_hitung === 'harian' ? 'mingguan' : 'harian'
+    const { error } = await supabase.from('bahan_baku').update({ frekuensi_hitung: next }).eq('id', b.id)
+    if (error) { showToast('❌ ' + error.message); return }
+    showToast(`${b.nama} → ${next === 'harian' ? 'dihitung tiap hari' : 'hanya saat opname'}`)
+    loadData()
+  }
   const [filterKat, setFilterKat] = useState('all')
   const [filterDiv, setFilterDiv] = useState('all')
   const [filterStatus, setFilterStatus] = useState('all')
@@ -2817,6 +3005,8 @@ function StokListView({ bahanBaku, showToast, loadData, logAudit, userName }) {
     if (!b.is_active) return false
     if (onlyNoKode && !perluKode(b)) return false
     const katOk    = filterKat === 'all' || b.kategori === filterKat
+    const frekOk   = filterFrek === 'all' || (b.frekuensi_hitung || 'mingguan') === filterFrek
+    if (!frekOk) return false
     const divOk    = filterDiv === 'all' || b.divisi === filterDiv || b.divisi === 'Both'
     const searchOk = !search.trim() || b.nama.toLowerCase().includes(search.toLowerCase())
     const isRendah   = b.stok_saat_ini < b.stok_minimum
@@ -2955,8 +3145,19 @@ function StokListView({ bahanBaku, showToast, loadData, logAudit, userName }) {
         ))}
       </div>
 
+      {/* Filter: frekuensi hitung */}
+      <div style={{ display: 'flex', gap: '5px', marginBottom: '12px', marginTop: '-8px', flexWrap: 'wrap' }}>
+        {[['all', 'Semua'], ['harian', `☀️ Harian (${bahanBaku.filter(b => b.is_active && b.frekuensi_hitung === 'harian').length})`], ['mingguan', `📦 Opname saja (${bahanBaku.filter(b => b.is_active && b.frekuensi_hitung !== 'harian').length})`]].map(([k, l]) => (
+          <button key={k} onClick={() => setFilterFrek(k)} style={{
+            padding: '5px 11px', fontSize: '11px', borderRadius: '99px', border: `1px solid ${C.border}`, cursor: 'pointer',
+            background: filterFrek === k ? C.green : 'transparent',
+            color: filterFrek === k ? '#fff' : C.text2, fontWeight: filterFrek === k ? 600 : 400,
+          }}>{l}</button>
+        ))}
+      </div>
+
       {/* Filter: belum punya kode Accurate */}
-      {tanpaKode > 0 && (
+      {role === 'owner' && tanpaKode > 0 && (
         <button onClick={() => setOnlyNoKode(!onlyNoKode)} style={{
           display: 'block', width: '100%', textAlign: 'left', marginTop: '-8px', marginBottom: '12px',
           padding: '7px 11px', fontSize: '11px', borderRadius: '8px', cursor: 'pointer',
@@ -2988,13 +3189,20 @@ function StokListView({ bahanBaku, showToast, loadData, logAudit, userName }) {
                 <div style={{ fontSize: '11px', color: C[statusColor], marginTop: '2px' }}>
                   Min {b.stok_minimum} {b.satuan_dasar}{b.harga_per_satuan > 0 ? ` · ${formatRupiah(b.harga_per_satuan)}/${b.satuan_dasar}` : ''}
                 </div>
+                {(role === 'owner' || b.kode_accurate) && (
                 <div style={{ fontSize: '10px', marginTop: '2px', fontFamily: 'monospace',
                   color: b.kode_accurate ? C.green : b.status_accurate === 'tidak_perlu' ? C.text3 : b.status_accurate === 'buat_baru' ? C.yellow : C.red }}>
                   {b.kode_accurate ? `Accurate ${b.kode_accurate}`
                     : b.status_accurate === 'tidak_perlu' ? 'cukup di aplikasi, tidak ke Accurate'
                     : b.status_accurate === 'buat_baru' ? 'perlu dibuat di Accurate'
                     : 'belum terhubung ke Accurate'}
-                </div>
+                </div>)}
+                <button onClick={() => role === 'owner' ? toggleFrek(b) : showToast('Hanya owner yang bisa mengubah ini')} style={{
+                  marginTop: '4px', padding: '2px 8px', fontSize: '10px', borderRadius: '99px', cursor: 'pointer',
+                  border: `1px solid ${b.frekuensi_hitung === 'harian' ? C.greenLightBorder : C.border}`,
+                  background: b.frekuensi_hitung === 'harian' ? C.greenLightBg : C.panel2,
+                  color: b.frekuensi_hitung === 'harian' ? C.greenLight : C.text3,
+                }}>{b.frekuensi_hitung === 'harian' ? '☀️ hitung tiap hari' : '📦 hanya saat opname'}{role === 'owner' ? ' · ubah' : ''}</button>
               </div>
               <div style={{ fontSize: '15px', fontWeight: 700, color: C[statusColor] }}>{b.stok_saat_ini} {b.satuan_dasar}</div>
             </div>
@@ -3021,7 +3229,7 @@ function StokListView({ bahanBaku, showToast, loadData, logAudit, userName }) {
       )}
       {(modal?.mode === 'add' || modal?.mode === 'edit') && (
         <BahanFormModal
-          mode={modal.mode} initial={modal.initial}
+          mode={modal.mode} initial={modal.initial} role={role}
           onClose={() => setModal(null)}
           showToast={showToast} loadData={loadData} logAudit={logAudit}
           bahanBaku={bahanBaku} userName={userName}
@@ -3454,6 +3662,9 @@ function HistoryBelanjaView({ belanja, showToast, loadData }) {
               <label style={S.label}>Sumber dana</label>
               <select value={editSumber} onChange={e => setEditSumber(e.target.value)} style={{ ...S.input, marginBottom: '10px' }}>
                 <option value="kas_kasir">🏦 Kas kasir</option>
+                <option value="transfer_toko">🏦 Transfer rekening toko</option>
+                <option value="qris_toko">📱 QRIS toko</option>
+                <option value="talangan">🙋 Ditalangi dulu</option>
                 <option value="kas_bon">📋 Bon / hutang dulu</option>
                 <option value="transfer">💳 Transfer</option>
                 <option value="pribadi">👤 Dana pribadi</option>
@@ -4140,6 +4351,9 @@ function BelanjaTabOwner({ belanja, showToast, loadData }) {
               <label style={S.label}>Sumber dana</label>
               <select value={editSumber} onChange={e => setEditSumber(e.target.value)} style={{ ...S.input, marginBottom: '10px' }}>
                 <option value="kas_kasir">🏦 Kas kasir</option>
+                <option value="transfer_toko">🏦 Transfer rekening toko</option>
+                <option value="qris_toko">📱 QRIS toko</option>
+                <option value="talangan">🙋 Ditalangi dulu</option>
                 <option value="kas_bon">📋 Bon / hutang dulu</option>
                 <option value="transfer">💳 Transfer</option>
                 <option value="pribadi">👤 Dana pribadi</option>
@@ -4368,7 +4582,7 @@ function OwnerDashboardView({ bahanBaku, produksi, belanja, closing, waste, audi
     let data, filename
     if (type === 'stok') {
       data = bahanBaku.map(b => ({
-        Nama: b.nama, 'Kode Accurate': b.kode_accurate || '', 'Nama Accurate': b.nama_accurate || '', 'Status Accurate': b.status_accurate || '', Kategori: b.kategori, Divisi: b.divisi,
+        Nama: b.nama, 'Kode Accurate': b.kode_accurate || '', 'Nama Accurate': b.nama_accurate || '', 'Status Accurate': b.status_accurate || '', 'Frekuensi Hitung': b.frekuensi_hitung || '', Kategori: b.kategori, Divisi: b.divisi,
         'Stok Saat Ini': b.stok_saat_ini, Satuan: b.satuan_dasar,
         'Stok Minimum': b.stok_minimum, 'Harga/Satuan': b.harga_per_satuan,
       }))
@@ -4786,6 +5000,7 @@ function UploadMasterView({ showToast, loadData, logAudit, bahanBaku }) {
             kode_accurate: (row['Kode Accurate'] || row['kode_accurate'] || '').toString().trim() || null,
             nama_accurate: (row['Nama Accurate'] || row['Nama di Accurate'] || '').toString().trim() || null,
             status_accurate: (row['Status Accurate'] || '').toString().trim().toLowerCase() || null,
+            frekuensi_hitung: ['harian', 'mingguan'].includes((row['Frekuensi Hitung'] || '').toString().trim().toLowerCase()) ? (row['Frekuensi Hitung'] || '').toString().trim().toLowerCase() : null,
           }
         }).filter(r =>
           r.nama && r.nama.trim() !== '' &&
@@ -4818,6 +5033,7 @@ function UploadMasterView({ showToast, loadData, logAudit, bahanBaku }) {
             ...(item.kode_accurate ? { kode_accurate: item.kode_accurate } : {}),
             ...(item.nama_accurate ? { nama_accurate: item.nama_accurate } : {}),
             ...(item.status_accurate ? { status_accurate: item.status_accurate } : {}),
+            ...(item.frekuensi_hitung ? { frekuensi_hitung: item.frekuensi_hitung } : {}),
           }
           if (item.stok_saat_ini !== null) {
             updatePayload.stok_saat_ini = item.stok_saat_ini
