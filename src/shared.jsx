@@ -7,11 +7,11 @@ import { supabase } from './supabase'
 // Palet warna aplikasi
 export const C = {
   // Gaya "Sunset": latar krem hangat, header kuning matahari, aksen oranye
-  bg: '#FFF7EC', panel: '#FFFFFF', panel2: '#FBE9D2',
-  text: '#2B1D12', text2: '#5A4634', text3: '#8A7360',
-  border: '#EAD9C2', border2: '#D9B98F',
-  sun: '#F7B733', sunDark: '#5A3A10',                 // header & tombol utama
-  green: '#B85A12', greenBg: '#FFE4C7', greenBorder: '#F28C28',       // "sukses / utama" = oranye sunset
+  bg: '#F3EDE2', panel: '#FFFDF9', panel2: '#EFE5D3',
+  text: '#3B2514', text2: '#5E4330', text3: '#8A7360',
+  border: '#E2D5C0', border2: '#CDB38A',
+  sun: '#F2B34C', sunDark: '#5A3A10',                 // header & tombol utama (amber kartu loyalti)
+  green: '#B85A12', greenBg: '#FBE3BF', greenBorder: '#E9A23B',       // "sukses / utama" = oranye stiker menu
   yellow: '#7A5A00', yellowBg: '#FFF8DC', yellowBorder: '#E8C547',    // peringatan
   red: '#B42318', redBg: '#FEECEB', redBorder: '#F4A79F',
   blue: '#1240B8', blueBg: '#E6EEFF', blueBorder: '#9DB8F5',           // info
@@ -21,13 +21,13 @@ export const C = {
 // Gaya dasar tombol, input, kartu
 export const S = {
   btn: { padding: '11px 14px', fontSize: '13px', border: 'none', borderRadius: '10px', cursor: 'pointer', fontWeight: 600, fontFamily: 'inherit' },
-  btnPrimary: { background: '#F7B733', color: '#2B1D12' },
-  btnSuccess: { background: '#C9661A', color: '#FFFFFF' },
+  btnPrimary: { background: '#F2B34C', color: '#3B2514' },
+  btnSuccess: { background: '#C2651B', color: '#FFFFFF' },
   btnDanger: { background: '#FEECEB', color: '#B42318', border: '1px solid #F4A79F' },
-  btnSecondary: { background: 'transparent', color: '#5A4634', border: '1px solid #EAD9C2' },
-  input: { width: '100%', padding: '11px 12px', border: '1.5px solid #EAD9C2', borderRadius: '10px', fontSize: '14px', background: '#FFFFFF', fontFamily: 'inherit', color: '#2B1D12' },
+  btnSecondary: { background: 'transparent', color: '#5E4330', border: '1px solid #E2D5C0' },
+  input: { width: '100%', padding: '11px 12px', border: '1.5px solid #E2D5C0', borderRadius: '10px', fontSize: '14px', background: '#FFFDF9', fontFamily: 'inherit', color: '#3B2514' },
   label: { display: 'block', fontSize: '11px', color: '#8A7360', marginBottom: '4px', fontWeight: 600 },
-  card: { background: '#FFFFFF', borderRadius: '14px', padding: '16px 18px', marginBottom: '12px' },
+  card: { background: '#FFFDF9', borderRadius: '14px', padding: '16px 18px', marginBottom: '12px' },
   badge: (color) => ({ fontSize: '10px', padding: '3px 8px', borderRadius: '99px', fontWeight: 600, display: 'inline-block', background: C[color + 'Bg'], color: C[color] }),
 }
 

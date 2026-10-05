@@ -490,7 +490,7 @@ export default function App() {
   return (
     <div style={{
       minHeight: '100vh',
-      background: '#F3E3CC',
+      background: '#E8DCC8',
       fontFamily: "'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif",
       color: C.text2,
       display: 'flex',
@@ -647,7 +647,7 @@ function AppShell(props) {
         <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
           <img src="/icons/logo-cokelat.png" alt="" style={{ height: '34px', width: 'auto' }} />
           <div>
-          <div style={{ fontSize: '18px', fontWeight: 800, letterSpacing: '-0.3px' }}>Piccolo Corner</div>
+          <div style={{ fontFamily: "'Bebas Neue', 'Plus Jakarta Sans', sans-serif", fontSize: '26px', letterSpacing: '1px', lineHeight: 1 }}>PICCOLO CORNER</div>
           <div style={{ fontSize: '12px', fontWeight: 600, color: C.sunDark }}>
             {userName || (role === 'owner' ? 'Owner' : 'Staff')} · {role === 'owner' ? 'Owner' : 'Staff'} · {formatTanggalID(new Date())}
           </div>
