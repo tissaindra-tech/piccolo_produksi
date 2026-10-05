@@ -2541,6 +2541,7 @@ function BahanFormModal({ mode, initial, onClose, showToast, loadData, logAudit,
   const [catatan, setCatatan] = useState(initial?.catatan || '')
   const [kodeAcc, setKodeAcc] = useState(initial?.kode_accurate || '')
   const [namaAcc, setNamaAcc] = useState(initial?.nama_accurate || '')
+  const [statusAcc, setStatusAcc] = useState(initial?.status_accurate || '')
   const [yangCatat, setYangCatat] = useState(userName || '')
   const [submitting, setSubmitting] = useState(false)
 
@@ -2574,6 +2575,7 @@ function BahanFormModal({ mode, initial, onClose, showToast, loadData, logAudit,
         catatan: catatan.trim() || null,
         kode_accurate: kodeAcc.trim() || null,
         nama_accurate: namaAcc.trim() || null,
+        status_accurate: kodeAcc.trim() ? 'terhubung' : (statusAcc || null),
         is_active: true,
         updated_at: new Date().toISOString(),
       }
@@ -2742,6 +2744,16 @@ function BahanFormModal({ mode, initial, onClose, showToast, loadData, logAudit,
               <input value={namaAcc} onChange={e => setNamaAcc(e.target.value)} placeholder="persis seperti di Accurate" style={S.input} />
             </div>
           </div>
+          {!kodeAcc.trim() && (
+            <div style={{ marginTop: '8px' }}>
+              <label style={S.label}>Kalau belum ada kodenya, bahan ini:</label>
+              <select value={statusAcc} onChange={e => setStatusAcc(e.target.value)} style={S.input}>
+                <option value="">Belum diputuskan</option>
+                <option value="buat_baru">Perlu dibuat di Accurate (barangnya belum ada)</option>
+                <option value="tidak_perlu">Cukup di aplikasi saja, tidak ke Accurate</option>
+              </select>
+            </div>
+          )}
           <p style={{ fontSize: '10px', color: C.text3, marginTop: '6px', marginBottom: 0 }}>
             Lihat di Accurate: Persediaan → Barang & Jasa → kolom Kode. Dipakai saat export ke Accurate.
           </p>
@@ -2774,11 +2786,12 @@ function StokListView({ bahanBaku, showToast, loadData, logAudit, userName }) {
   const [search, setSearch] = useState('')
   const [modal, setModal] = useState(null)
   const [onlyNoKode, setOnlyNoKode] = useState(false)
-  const tanpaKode = bahanBaku.filter(b => b.is_active && !b.kode_accurate).length
+  const perluKode = (b) => !b.kode_accurate && b.status_accurate !== 'tidak_perlu'
+  const tanpaKode = bahanBaku.filter(b => b.is_active && perluKode(b)).length
 
   const filtered = bahanBaku.filter(b => {
     if (!b.is_active) return false
-    if (onlyNoKode && b.kode_accurate) return false
+    if (onlyNoKode && !perluKode(b)) return false
     const katOk    = filterKat === 'all' || b.kategori === filterKat
     const divOk    = filterDiv === 'all' || b.divisi === filterDiv || b.divisi === 'Both'
     const searchOk = !search.trim() || b.nama.toLowerCase().includes(search.toLowerCase())
@@ -2926,13 +2939,13 @@ function StokListView({ bahanBaku, showToast, loadData, logAudit, userName }) {
           border: `1px solid ${C.yellowBorder}`, background: onlyNoKode ? C.yellow : C.yellowBg,
           color: onlyNoKode ? '#fff' : C.yellow, fontWeight: 500,
         }}>
-          🔗 {tanpaKode} bahan belum punya kode Accurate {onlyNoKode ? '· tap untuk lihat semua' : '· tap untuk lihat daftarnya'}
+          🔗 {tanpaKode} bahan belum terhubung ke Accurate {onlyNoKode ? '· tap untuk lihat semua' : '· tap untuk lihat daftarnya'}
         </button>
       )}
 
       {filtered.length === 0 && (
         <div style={{ textAlign: 'center', padding: '24px', color: C.text3, fontSize: '13px' }}>
-          {search ? `Tidak ada bahan "${search}"` : onlyNoKode ? '✅ Semua bahan sudah punya kode Accurate' : 'Belum ada bahan. Klik ➕ Tambah Bahan.'}
+          {search ? `Tidak ada bahan "${search}"` : onlyNoKode ? '✅ Semua bahan sudah terhubung ke Accurate' : 'Belum ada bahan. Klik ➕ Tambah Bahan.'}
         </div>
       )}
 
@@ -2951,8 +2964,12 @@ function StokListView({ bahanBaku, showToast, loadData, logAudit, userName }) {
                 <div style={{ fontSize: '11px', color: C[statusColor], marginTop: '2px' }}>
                   Min {b.stok_minimum} {b.satuan_dasar}{b.harga_per_satuan > 0 ? ` · ${formatRupiah(b.harga_per_satuan)}/${b.satuan_dasar}` : ''}
                 </div>
-                <div style={{ fontSize: '10px', marginTop: '2px', fontFamily: 'monospace', color: b.kode_accurate ? C.green : C.red }}>
-                  {b.kode_accurate ? `Accurate ${b.kode_accurate}` : 'belum ada kode Accurate'}
+                <div style={{ fontSize: '10px', marginTop: '2px', fontFamily: 'monospace',
+                  color: b.kode_accurate ? C.green : b.status_accurate === 'tidak_perlu' ? C.text3 : b.status_accurate === 'buat_baru' ? C.yellow : C.red }}>
+                  {b.kode_accurate ? `Accurate ${b.kode_accurate}`
+                    : b.status_accurate === 'tidak_perlu' ? 'cukup di aplikasi, tidak ke Accurate'
+                    : b.status_accurate === 'buat_baru' ? 'perlu dibuat di Accurate'
+                    : 'belum terhubung ke Accurate'}
                 </div>
               </div>
               <div style={{ fontSize: '15px', fontWeight: 700, color: C[statusColor] }}>{b.stok_saat_ini} {b.satuan_dasar}</div>
@@ -4327,7 +4344,7 @@ function OwnerDashboardView({ bahanBaku, produksi, belanja, closing, waste, audi
     let data, filename
     if (type === 'stok') {
       data = bahanBaku.map(b => ({
-        Nama: b.nama, 'Kode Accurate': b.kode_accurate || '', 'Nama Accurate': b.nama_accurate || '', Kategori: b.kategori, Divisi: b.divisi,
+        Nama: b.nama, 'Kode Accurate': b.kode_accurate || '', 'Nama Accurate': b.nama_accurate || '', 'Status Accurate': b.status_accurate || '', Kategori: b.kategori, Divisi: b.divisi,
         'Stok Saat Ini': b.stok_saat_ini, Satuan: b.satuan_dasar,
         'Stok Minimum': b.stok_minimum, 'Harga/Satuan': b.harga_per_satuan,
       }))
@@ -4744,6 +4761,7 @@ function UploadMasterView({ showToast, loadData, logAudit, bahanBaku }) {
             catatan: (row['Catatan'] || '').toString().trim() || null,
             kode_accurate: (row['Kode Accurate'] || row['kode_accurate'] || '').toString().trim() || null,
             nama_accurate: (row['Nama Accurate'] || row['Nama di Accurate'] || '').toString().trim() || null,
+            status_accurate: (row['Status Accurate'] || '').toString().trim().toLowerCase() || null,
           }
         }).filter(r =>
           r.nama && r.nama.trim() !== '' &&
@@ -4775,6 +4793,7 @@ function UploadMasterView({ showToast, loadData, logAudit, bahanBaku }) {
             catatan: item.catatan, is_active: true,
             ...(item.kode_accurate ? { kode_accurate: item.kode_accurate } : {}),
             ...(item.nama_accurate ? { nama_accurate: item.nama_accurate } : {}),
+            ...(item.status_accurate ? { status_accurate: item.status_accurate } : {}),
           }
           if (item.stok_saat_ini !== null) {
             updatePayload.stok_saat_ini = item.stok_saat_ini

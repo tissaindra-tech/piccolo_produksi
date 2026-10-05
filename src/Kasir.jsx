@@ -494,12 +494,12 @@ export function RekapHarianView({ bahanBaku, showToast, setView }) {
   belanja.forEach(b => (b.items || []).forEach(it => {
     const bahan = bahanById[it.bahan_id]
     belanjaRows.push({
-      nota_id: b.id, nama: it.nama, jumlah: it.jumlah, satuan: it.satuan, harga: it.harga,
+      nota_id: b.id, bahan_id: it.bahan_id, nama: it.nama, jumlah: it.jumlah, satuan: it.satuan, harga: it.harga,
       kode: bahan?.kode_accurate || '', nama_acc: bahan?.nama_accurate || '',
       sumber: SUMBER_DANA_LABEL[b.sumber_dana] || b.sumber_dana, jalur: b.jalur, yang_belanja: b.yang_belanja, foto: b.foto_nota,
     })
   }))
-  const tanpaKode = belanjaRows.filter(r => !r.kode).length
+  const tanpaKode = belanjaRows.filter(r => !r.kode && bahanById[r.bahan_id]?.status_accurate !== 'tidak_perlu').length
 
   const teksRekap = () => {
     const L = []
@@ -620,7 +620,7 @@ export function RekapHarianView({ bahanBaku, showToast, setView }) {
       <Section title="🧾 Belanja bahan" count={belanja.length} total={totalBelanja} empty="Tidak ada nota belanja.">
         {tanpaKode > 0 && (
           <div style={{ background: C.yellowBg, color: C.yellow, border: `1px solid ${C.yellowBorder}`, borderRadius: '6px', padding: '6px 10px', fontSize: '11px', marginBottom: '8px' }}>
-            ⚠️ {tanpaKode} item belum punya kode Accurate. Isi lewat 📦 Stok → ✏️ Edit.
+            ⚠️ {tanpaKode} item belum terhubung ke Accurate. Isi lewat 📦 Stok → ✏️ Edit.
           </div>
         )}
         {belanja.map(b => (
@@ -637,7 +637,7 @@ export function RekapHarianView({ bahanBaku, showToast, setView }) {
               return (
                 <div key={i} style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px', padding: '2px 0' }}>
                   <span style={{ flex: 1 }}>
-                    <span style={{ fontFamily: 'monospace', fontSize: '11px', color: bahan?.kode_accurate ? C.green : C.red, marginRight: '6px' }}>{bahan?.kode_accurate || '— —'}</span>
+                    <span style={{ fontFamily: 'monospace', fontSize: '11px', color: bahan?.kode_accurate ? C.green : bahan?.status_accurate === 'tidak_perlu' ? C.text3 : C.red, marginRight: '6px' }}>{bahan?.kode_accurate || (bahan?.status_accurate === 'tidak_perlu' ? 'app' : '— —')}</span>
                     {it.nama} <span style={{ color: C.text3 }}>{it.jumlah} {it.satuan}</span>
                   </span>
                   <span>{formatRupiah(it.harga)}</span>
@@ -666,7 +666,7 @@ export function RekapHarianView({ bahanBaku, showToast, setView }) {
       <Section title="🗑️ Waste" count={waste.length} total={Math.round(nilaiWaste)} empty="Tidak ada waste tercatat.">
         {waste.map(w => { const b = bahanById[w.bahan_id]; return (
           <div key={w.id} style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px', padding: '3px 0', borderTop: `1px solid ${C.panel2}` }}>
-            <span><span style={{ fontFamily: 'monospace', fontSize: '11px', color: b?.kode_accurate ? C.green : C.red, marginRight: '6px' }}>{b?.kode_accurate || '— —'}</span>{b?.nama || w.bahan_id} <span style={{ color: C.text3 }}>{w.jumlah} {b?.satuan_dasar} · {w.alasan}</span></span>
+            <span><span style={{ fontFamily: 'monospace', fontSize: '11px', color: b?.kode_accurate ? C.green : b?.status_accurate === 'tidak_perlu' ? C.text3 : C.red, marginRight: '6px' }}>{b?.kode_accurate || (b?.status_accurate === 'tidak_perlu' ? 'app' : '— —')}</span>{b?.nama || w.bahan_id} <span style={{ color: C.text3 }}>{w.jumlah} {b?.satuan_dasar} · {w.alasan}</span></span>
             <span>{formatRupiah(Math.round(num(w.jumlah) * num(b?.harga_per_satuan)))}</span>
           </div>
         )})}
