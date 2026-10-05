@@ -1,48 +1,13 @@
 import { useState, useEffect, useMemo } from 'react'
 import { supabase, generateId, formatTanggal, formatTanggalID, formatRupiah, daysFromNow } from './supabase'
 import * as XLSX from 'xlsx'
+import { C, S, uploadFotoToStorage } from './shared'
+import { PenjualanView, PengeluaranKasirView, RekapHarianView } from './Kasir'
 
 // =====================================================
 // PICCOLO CORNER v3 - Aplikasi Produksi & Inventory
 // =====================================================
 
-// ─── HELPER: Kompres gambar sebelum upload ───
-async function compressImage(file, maxWidth = 1200, quality = 0.75) {
-  return new Promise((resolve, reject) => {
-    const img = new Image()
-    const url = URL.createObjectURL(file)
-    img.onload = () => {
-      URL.revokeObjectURL(url)
-      let { width, height } = img
-      if (width > maxWidth) {
-        height = Math.round(height * maxWidth / width)
-        width = maxWidth
-      }
-      const canvas = document.createElement('canvas')
-      canvas.width = width
-      canvas.height = height
-      canvas.getContext('2d').drawImage(img, 0, 0, width, height)
-      canvas.toBlob(blob => {
-        if (!blob) { reject(new Error('Kompresi gagal')); return }
-        resolve(new File([blob], file.name.replace(/\.[^.]+$/, '.jpg'), { type: 'image/jpeg' }))
-      }, 'image/jpeg', quality)
-    }
-    img.onerror = reject
-    img.src = url
-  })
-}
-
-// ─── HELPER: Upload foto ke Supabase Storage ───
-async function uploadFotoToStorage(file, folder) {
-  const compressed = await compressImage(file)
-  const fileName = `${folder}/${Date.now()}_${Math.random().toString(36).slice(2)}.jpg`
-  const { error } = await supabase.storage.from('foto-piccolo').upload(fileName, compressed, {
-    cacheControl: '3600', upsert: false, contentType: 'image/jpeg'
-  })
-  if (error) throw new Error('Gagal upload foto: ' + error.message)
-  const { data: { publicUrl } } = supabase.storage.from('foto-piccolo').getPublicUrl(fileName)
-  return publicUrl
-}
 // ─── FALLBACK login — dipakai HANYA kalau database gagal diakses ───
 // Daftar user asli dikelola Owner via menu "👥 User" (tabel app_users)
 const FALLBACK_USERS = [
@@ -68,29 +33,6 @@ const SATUAN_LIST = [
   'sisir', 'lembar', 'ikat', 'porsi', 'gelas', 'pinch',
   'pack', 'dus', 'jirigen', 'botol', 'kotak'
 ]
-
-const C = {
-  bg: '#f0ede5', panel: '#fdfaf0', panel2: '#ebe6d3',
-  text: '#1a1814', text2: '#3d3929', text3: '#7a7560',
-  border: '#c8b58c', border2: '#a3845c',
-  green: '#085041', greenBg: '#e1f5ee', greenBorder: '#5dcaa5',
-  yellow: '#633806', yellowBg: '#faeeda', yellowBorder: '#ef9f27',
-  red: '#791f1f', redBg: '#fcebeb', redBorder: '#f09595',
-  blue: '#042c53', blueBg: '#e6f1fb', blueBorder: '#7dadeb',
-  greenLight: '#3b6d11', greenLightBg: '#eaf3de', greenLightBorder: '#639922',
-}
-
-const S = {
-  btn: { padding: '10px 14px', fontSize: '13px', border: 'none', borderRadius: '7px', cursor: 'pointer', fontWeight: 500 },
-  btnPrimary: { background: C.text, color: C.panel },
-  btnSuccess: { background: C.green, color: C.panel },
-  btnDanger: { background: C.redBg, color: C.red, border: `1px solid ${C.redBorder}` },
-  btnSecondary: { background: 'transparent', color: C.text2, border: `1px solid ${C.border}` },
-  input: { width: '100%', padding: '9px 11px', border: `1px solid ${C.border}`, borderRadius: '7px', fontSize: '13px', background: C.panel, fontFamily: 'inherit' },
-  label: { display: 'block', fontSize: '11px', color: C.text3, marginBottom: '4px', fontWeight: 500 },
-  card: { background: C.panel, borderRadius: '12px', padding: '16px 18px', marginBottom: '12px' },
-  badge: (color) => ({ fontSize: '10px', padding: '3px 8px', borderRadius: '99px', fontWeight: 500, display: 'inline-block', background: C[color + 'Bg'], color: C[color] }),
-}
 
 // =====================================================
 // LOGIN — Pilih nama dulu, lalu PIN
@@ -378,6 +320,7 @@ export default function App() {
   const [closing, setClosing] = useState([])
   const [waste, setWaste] = useState([])
   const [auditLog, setAuditLog] = useState([])
+  const [penjualan, setPenjualan] = useState([])
   const [loading, setLoading] = useState(false)  // false dulu — true hanya setelah login
   const [toast, setToast] = useState('')
   const [lazyLoaded, setLazyLoaded] = useState({})
@@ -387,16 +330,18 @@ export default function App() {
   const loadDataCritical = async () => {
     setLoading(true)
     try {
-      const [b, p, bl, c] = await Promise.all([
+      const [b, p, bl, c, pj] = await Promise.all([
         supabase.from('bahan_baku').select('*').eq('is_active', true).order('nama'),
         supabase.from('produksi').select('*').order('created_at', { ascending: false }).limit(60),
         supabase.from('belanja').select('*').order('created_at', { ascending: false }).limit(50),
         supabase.from('closing_stok').select('*').order('created_at', { ascending: false }).limit(60),
+        supabase.from('penjualan_harian').select('*').order('tanggal', { ascending: false }).limit(40),
       ])
       setBahanBaku(b.data || [])
       setProduksi(p.data || [])
       setBelanja(bl.data || [])
       setClosing(c.data || [])
+      setPenjualan(pj.data || [])
     } catch (err) {
       console.error('loadDataCritical error:', err)
     } finally {
@@ -437,7 +382,7 @@ export default function App() {
   useEffect(() => {
     if (!role) return
     loadDataCritical()
-    const channels = ['bahan_baku', 'produksi', 'belanja', 'closing_stok'].map(t =>
+    const channels = ['bahan_baku', 'produksi', 'belanja', 'closing_stok', 'penjualan_harian'].map(t =>
       supabase.channel(`ch-${t}`).on('postgres_changes', { event: '*', schema: 'public', table: t }, () => loadDataCritical()).subscribe()
     )
     return () => channels.forEach(c => supabase.removeChannel(c))
@@ -482,7 +427,7 @@ export default function App() {
 
   const props = {
     role, userName, setUserName, view, setView,
-    bahanBaku, produksi, belanja, closing, waste, auditLog,
+    bahanBaku, produksi, belanja, closing, waste, auditLog, penjualan,
     loadData, showToast, logAudit, lazyLoaded,
     daysSinceClosing, isLocked,
     handleLogout: () => { setRole(null); setUserName(''); setView('home'); setLazyLoaded({}) }
@@ -619,6 +564,8 @@ function AppShell(props) {
       { id: 'produksi', label: '📝 Produksi' },
       { id: 'histproduksi', label: '📋 Lap.Produksi' },
       { id: 'inputnota', label: '🧾 Nota' },
+      { id: 'penjualan', label: '💰 Penjualan' },
+      { id: 'pengeluaran', label: '💸 Kas Keluar' },
       { id: 'closing', label: '📋 Update Stok' },
       { id: 'stoklist', label: '📦 Stok' },
       { id: 'waste', label: '🗑️ Waste' },
@@ -628,6 +575,7 @@ function AppShell(props) {
     owner: [
       { id: 'home', label: '🏠 Home' },
       { id: 'dashboard', label: '👑 Dashboard' },
+      { id: 'rekap', label: '📅 Rekap Harian' },
       { id: 'resep', label: '📖 Resep' },
       { id: 'upload', label: '📤 Master' },
       { id: 'stoklist', label: '📦 Stok' },
@@ -677,6 +625,9 @@ function AppShell(props) {
         {view === 'produksi' && <ProduksiView {...props} />}
         {view === 'histproduksi' && <HistoryProduksiView {...props} />}
         {view === 'inputnota' && <InputNotaView {...props} />}
+        {view === 'penjualan' && <PenjualanView {...props} />}
+        {view === 'pengeluaran' && <PengeluaranKasirView {...props} />}
+        {view === 'rekap' && <RekapHarianView {...props} />}
         {view === 'closing' && <ClosingView {...props} />}
         {view === 'stoklist' && <StokListView {...props} />}
         {view === 'waste' && (
@@ -709,7 +660,7 @@ function HomeView(props) {
   return <StaffHome {...props} />
 }
 
-function StaffHome({ bahanBaku, produksi, belanja, closing, daysSinceClosing, setView, userName }) {
+function StaffHome({ bahanBaku, produksi, belanja, closing, penjualan, daysSinceClosing, setView, userName }) {
   const today = formatTanggal()
   const totalBahan = bahanBaku.filter(b => b.is_active).length
 
@@ -726,6 +677,10 @@ function StaffHome({ bahanBaku, produksi, belanja, closing, daysSinceClosing, se
   const notaHariIni = belanja.filter(b => b.tanggal === today)
   const adaNota = notaHariIni.length > 0
 
+  // Laporan penjualan hari ini (kasir)
+  const penjualanHariIni = (penjualan || []).find(p => p.tanggal === today)
+  const adaPenjualan = !!penjualanHariIni
+
   // Stok rendah
   const stokRendah = bahanBaku.filter(b => b.stok_saat_ini < b.stok_minimum && b.is_active)
 
@@ -741,6 +696,11 @@ function StaffHome({ bahanBaku, produksi, belanja, closing, daysSinceClosing, se
       text: `catat nota — ${b.items?.map(i => i.nama).join(', ').slice(0, 40)}`,
       time: b.created_at,
     })),
+    ...(penjualanHariIni ? [{
+      id: 'pj-' + penjualanHariIni.id, type: 'penjualan', who: penjualanHariIni.yang_input,
+      text: `input penjualan — ${formatRupiah(penjualanHariIni.total_omzet)}`,
+      time: penjualanHariIni.updated_at || penjualanHariIni.created_at,
+    }] : []),
     ...(() => {
       // 1 entry per staff yang sudah update stok hari ini
       const staffMap = {}
@@ -757,8 +717,9 @@ function StaffHome({ bahanBaku, produksi, belanja, closing, daysSinceClosing, se
     })(),
   ].sort((a, b) => (b.time || '').localeCompare(a.time || '')).slice(0, 6)
 
-  const misiDone = (produksiSelesai ? 1 : 0) + (stokSelesai ? 1 : 0) + (adaNota ? 1 : 0)
-  const misiPct  = Math.round((misiDone / 3) * 100)
+  const misiDone = (produksiSelesai ? 1 : 0) + (stokSelesai ? 1 : 0) + (adaNota ? 1 : 0) + (adaPenjualan ? 1 : 0)
+  const MISI_TOTAL = 4
+  const misiPct  = Math.round((misiDone / MISI_TOTAL) * 100)
 
   const avatarInitial = (name) => (name || '?').slice(0, 2).toUpperCase()
   const avatarColor = (name) => {
@@ -789,12 +750,12 @@ function StaffHome({ bahanBaku, produksi, belanja, closing, daysSinceClosing, se
         {/* Header misi */}
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '12px' }}>
           <div style={{ fontSize: '14px', fontWeight: 600, color: C.text }}>
-            {misiDone === 3 ? '🎉 Semua misi selesai!' : `📋 Misi harian — ${misiDone}/3`}
+            {misiDone === MISI_TOTAL ? '🎉 Semua misi selesai!' : `📋 Misi harian — ${misiDone}/${MISI_TOTAL}`}
           </div>
           {/* Progress bar keseluruhan */}
           <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
             <div style={{ width: '64px', height: '5px', background: C.panel2, borderRadius: '99px', overflow: 'hidden' }}>
-              <div style={{ width: `${misiPct}%`, height: '100%', background: misiDone === 3 ? C.green : C.yellow, borderRadius: '99px', transition: 'width 0.4s' }} />
+              <div style={{ width: `${misiPct}%`, height: '100%', background: misiDone === MISI_TOTAL ? C.green : C.yellow, borderRadius: '99px', transition: 'width 0.4s' }} />
             </div>
             <span style={{ fontSize: '11px', color: C.text3 }}>{misiPct}%</span>
           </div>
@@ -862,8 +823,8 @@ function StaffHome({ bahanBaku, produksi, belanja, closing, daysSinceClosing, se
 
         {/* Task 3 — Nota */}
         <div onClick={() => setView('inputnota')} style={{
-          display: 'flex', alignItems: 'center', gap: '10px', padding: '10px 0 0',
-          cursor: 'pointer',
+          display: 'flex', alignItems: 'center', gap: '10px', padding: '10px 0',
+          borderBottom: `1px solid ${C.panel2}`, cursor: 'pointer',
         }}>
           <div style={{
             width: '22px', height: '22px', borderRadius: '50%', flexShrink: 0,
@@ -883,6 +844,34 @@ function StaffHome({ bahanBaku, produksi, belanja, closing, daysSinceClosing, se
               </div>
             ) : (
               <div style={{ fontSize: '11px', color: C.text3, marginTop: '1px' }}>Belum ada input hari ini</div>
+            )}
+          </div>
+          <span style={{ fontSize: '11px', color: C.text3 }}>→</span>
+        </div>
+
+        {/* Task 4 — Penjualan harian (kasir) */}
+        <div onClick={() => setView('penjualan')} style={{
+          display: 'flex', alignItems: 'center', gap: '10px', padding: '10px 0 0',
+          cursor: 'pointer',
+        }}>
+          <div style={{
+            width: '22px', height: '22px', borderRadius: '50%', flexShrink: 0,
+            background: adaPenjualan ? C.green : 'transparent',
+            border: `2px solid ${adaPenjualan ? C.green : C.border}`,
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+          }}>
+            {adaPenjualan && <span style={{ color: '#fff', fontSize: '12px' }}>✓</span>}
+          </div>
+          <div style={{ flex: 1 }}>
+            <div style={{ fontSize: '13px', fontWeight: 500, color: adaPenjualan ? C.text3 : C.text, textDecoration: adaPenjualan ? 'line-through' : 'none' }}>
+              Laporan penjualan tutup kasir
+            </div>
+            {adaPenjualan ? (
+              <div style={{ fontSize: '11px', color: C.green, marginTop: '1px' }}>
+                ✓ {formatRupiah(penjualanHariIni.total_omzet)} · oleh {penjualanHariIni.yang_input}
+              </div>
+            ) : (
+              <div style={{ fontSize: '11px', color: C.text3, marginTop: '1px' }}>Diisi kasir setelah tutup · tidak perlu kirim ke WA lagi</div>
             )}
           </div>
           <span style={{ fontSize: '11px', color: C.text3 }}>→</span>
@@ -936,6 +925,22 @@ function StaffHome({ bahanBaku, produksi, belanja, closing, daysSinceClosing, se
         }}>
           <div style={{ fontSize: '18px', marginBottom: '3px' }}>🗑️</div>
           Catat waste
+        </button>
+        <button onClick={() => setView('penjualan')} style={{
+          padding: '13px 10px', fontSize: '12px', fontWeight: 600, textAlign: 'center',
+          background: C.greenLightBg, color: C.greenLight, border: `1.5px solid ${C.greenLightBorder}`,
+          borderRadius: '10px', cursor: 'pointer', lineHeight: 1.3,
+        }}>
+          <div style={{ fontSize: '18px', marginBottom: '3px' }}>💰</div>
+          Laporan penjualan
+        </button>
+        <button onClick={() => setView('pengeluaran')} style={{
+          padding: '13px 10px', fontSize: '12px', fontWeight: 600, textAlign: 'center',
+          background: C.panel2, color: C.text2, border: `1.5px solid ${C.border}`,
+          borderRadius: '10px', cursor: 'pointer', lineHeight: 1.3,
+        }}>
+          <div style={{ fontSize: '18px', marginBottom: '3px' }}>💸</div>
+          Kas kasir keluar
         </button>
       </div>
 
@@ -1081,8 +1086,10 @@ function OwnerHome(props) {
       )}
 
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px', marginTop: '14px' }}>
+        <BigBtn color="green" icon="📅" label="Rekap Harian" onClick={() => setView('rekap')} />
         <BigBtn color="default" icon="👑" label="Dashboard Lengkap" onClick={() => setView('dashboard')} />
         <BigBtn color="blue" icon="📤" label="Upload Master" onClick={() => setView('upload')} />
+        <BigBtn color="yellow" icon="💸" label="Kas Kasir Keluar" onClick={() => setView('pengeluaran')} />
       </div>
     </div>
   )
@@ -2532,6 +2539,8 @@ function BahanFormModal({ mode, initial, onClose, showToast, loadData, logAudit,
   const [perishable, setPerishable] = useState(initial?.is_perishable || false)
   const [umurSimpan, setUmurSimpan] = useState(initial?.umur_simpan_hari || '')
   const [catatan, setCatatan] = useState(initial?.catatan || '')
+  const [kodeAcc, setKodeAcc] = useState(initial?.kode_accurate || '')
+  const [namaAcc, setNamaAcc] = useState(initial?.nama_accurate || '')
   const [yangCatat, setYangCatat] = useState(userName || '')
   const [submitting, setSubmitting] = useState(false)
 
@@ -2563,6 +2572,8 @@ function BahanFormModal({ mode, initial, onClose, showToast, loadData, logAudit,
         is_perishable: perishable,
         umur_simpan_hari: perishable ? (Number(umurSimpan) || null) : null,
         catatan: catatan.trim() || null,
+        kode_accurate: kodeAcc.trim() || null,
+        nama_accurate: namaAcc.trim() || null,
         is_active: true,
         updated_at: new Date().toISOString(),
       }
@@ -2716,6 +2727,26 @@ function BahanFormModal({ mode, initial, onClose, showToast, loadData, logAudit,
           </div>
         )}
 
+        {/* Kaitan ke Accurate Online */}
+        <div style={{ background: kodeAcc ? C.greenBg : C.yellowBg, border: `1px solid ${kodeAcc ? C.greenBorder : C.yellowBorder}`, padding: '10px 12px', borderRadius: '8px', marginBottom: '8px' }}>
+          <div style={{ fontSize: '11px', color: kodeAcc ? C.green : C.yellow, fontWeight: 600, marginBottom: '8px' }}>
+            🔗 Kaitan ke Accurate {kodeAcc ? '' : '— belum diisi'}
+          </div>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 2fr', gap: '8px' }}>
+            <div>
+              <label style={S.label}>Kode Barang</label>
+              <input value={kodeAcc} onChange={e => setKodeAcc(e.target.value.toUpperCase())} placeholder="BBF-007" style={{ ...S.input, fontFamily: 'monospace' }} />
+            </div>
+            <div>
+              <label style={S.label}>Nama di Accurate</label>
+              <input value={namaAcc} onChange={e => setNamaAcc(e.target.value)} placeholder="persis seperti di Accurate" style={S.input} />
+            </div>
+          </div>
+          <p style={{ fontSize: '10px', color: C.text3, marginTop: '6px', marginBottom: 0 }}>
+            Lihat di Accurate: Persediaan → Barang & Jasa → kolom Kode. Dipakai saat export ke Accurate.
+          </p>
+        </div>
+
         <label style={S.label}>Catatan</label>
         <textarea value={catatan} onChange={e => setCatatan(e.target.value)} placeholder="Optional: supplier, tips, dll" rows={2} style={{ ...S.input, resize: 'vertical', marginBottom: '8px' }} />
 
@@ -2742,9 +2773,12 @@ function StokListView({ bahanBaku, showToast, loadData, logAudit, userName }) {
   const [filterStatus, setFilterStatus] = useState('all')
   const [search, setSearch] = useState('')
   const [modal, setModal] = useState(null)
+  const [onlyNoKode, setOnlyNoKode] = useState(false)
+  const tanpaKode = bahanBaku.filter(b => b.is_active && !b.kode_accurate).length
 
   const filtered = bahanBaku.filter(b => {
     if (!b.is_active) return false
+    if (onlyNoKode && b.kode_accurate) return false
     const katOk    = filterKat === 'all' || b.kategori === filterKat
     const divOk    = filterDiv === 'all' || b.divisi === filterDiv || b.divisi === 'Both'
     const searchOk = !search.trim() || b.nama.toLowerCase().includes(search.toLowerCase())
@@ -2884,9 +2918,21 @@ function StokListView({ bahanBaku, showToast, loadData, logAudit, userName }) {
         ))}
       </div>
 
+      {/* Filter: belum punya kode Accurate */}
+      {tanpaKode > 0 && (
+        <button onClick={() => setOnlyNoKode(!onlyNoKode)} style={{
+          display: 'block', width: '100%', textAlign: 'left', marginTop: '-8px', marginBottom: '12px',
+          padding: '7px 11px', fontSize: '11px', borderRadius: '8px', cursor: 'pointer',
+          border: `1px solid ${C.yellowBorder}`, background: onlyNoKode ? C.yellow : C.yellowBg,
+          color: onlyNoKode ? '#fff' : C.yellow, fontWeight: 500,
+        }}>
+          🔗 {tanpaKode} bahan belum punya kode Accurate {onlyNoKode ? '· tap untuk lihat semua' : '· tap untuk lihat daftarnya'}
+        </button>
+      )}
+
       {filtered.length === 0 && (
         <div style={{ textAlign: 'center', padding: '24px', color: C.text3, fontSize: '13px' }}>
-          {search ? `Tidak ada bahan "${search}"` : 'Belum ada bahan. Klik ➕ Tambah Bahan.'}
+          {search ? `Tidak ada bahan "${search}"` : onlyNoKode ? '✅ Semua bahan sudah punya kode Accurate' : 'Belum ada bahan. Klik ➕ Tambah Bahan.'}
         </div>
       )}
 
@@ -2904,6 +2950,9 @@ function StokListView({ bahanBaku, showToast, loadData, logAudit, userName }) {
                 </div>
                 <div style={{ fontSize: '11px', color: C[statusColor], marginTop: '2px' }}>
                   Min {b.stok_minimum} {b.satuan_dasar}{b.harga_per_satuan > 0 ? ` · ${formatRupiah(b.harga_per_satuan)}/${b.satuan_dasar}` : ''}
+                </div>
+                <div style={{ fontSize: '10px', marginTop: '2px', fontFamily: 'monospace', color: b.kode_accurate ? C.green : C.red }}>
+                  {b.kode_accurate ? `Accurate ${b.kode_accurate}` : 'belum ada kode Accurate'}
                 </div>
               </div>
               <div style={{ fontSize: '15px', fontWeight: 700, color: C[statusColor] }}>{b.stok_saat_ini} {b.satuan_dasar}</div>
@@ -4278,7 +4327,7 @@ function OwnerDashboardView({ bahanBaku, produksi, belanja, closing, waste, audi
     let data, filename
     if (type === 'stok') {
       data = bahanBaku.map(b => ({
-        Nama: b.nama, Kategori: b.kategori, Divisi: b.divisi,
+        Nama: b.nama, 'Kode Accurate': b.kode_accurate || '', 'Nama Accurate': b.nama_accurate || '', Kategori: b.kategori, Divisi: b.divisi,
         'Stok Saat Ini': b.stok_saat_ini, Satuan: b.satuan_dasar,
         'Stok Minimum': b.stok_minimum, 'Harga/Satuan': b.harga_per_satuan,
       }))
@@ -4290,6 +4339,7 @@ function OwnerDashboardView({ bahanBaku, produksi, belanja, closing, waste, audi
           data.push({
             Tanggal: bl.tanggal,
             'Nama Barang': it.nama,
+            'Kode Accurate': bahanBaku.find(x => x.id === it.bahan_id)?.kode_accurate || '',
             Jumlah: it.jumlah,
             Satuan: it.satuan,
             'Harga': it.harga,
@@ -4378,6 +4428,7 @@ function OwnerDashboardView({ bahanBaku, produksi, belanja, closing, waste, audi
         return {
           'Tanggal Closing':         row.tanggal,
           'Nama Bahan':              bahan?.nama || '-',
+          'Kode Accurate':           bahan?.kode_accurate || '',
           'Satuan':                  bahan?.satuan_dasar || '-',
           'Divisi':                  bahan?.divisi || '-',
           'Stok Sebelum (Sistem)':   sebelum,
@@ -4691,6 +4742,8 @@ function UploadMasterView({ showToast, loadData, logAudit, bahanBaku }) {
             is_perishable: (row['Perishable?'] || '').toString().trim().toLowerCase() === 'y',
             umur_simpan_hari: Number(row['Umur Simpan (hari)']) || null,
             catatan: (row['Catatan'] || '').toString().trim() || null,
+            kode_accurate: (row['Kode Accurate'] || row['kode_accurate'] || '').toString().trim() || null,
+            nama_accurate: (row['Nama Accurate'] || row['Nama di Accurate'] || '').toString().trim() || null,
           }
         }).filter(r =>
           r.nama && r.nama.trim() !== '' &&
@@ -4720,6 +4773,8 @@ function UploadMasterView({ showToast, loadData, logAudit, bahanBaku }) {
             stok_minimum: item.stok_minimum, harga_per_satuan: item.harga_per_satuan,
             is_perishable: item.is_perishable, umur_simpan_hari: item.umur_simpan_hari,
             catatan: item.catatan, is_active: true,
+            ...(item.kode_accurate ? { kode_accurate: item.kode_accurate } : {}),
+            ...(item.nama_accurate ? { nama_accurate: item.nama_accurate } : {}),
           }
           if (item.stok_saat_ini !== null) {
             updatePayload.stok_saat_ini = item.stok_saat_ini
@@ -4747,7 +4802,7 @@ function UploadMasterView({ showToast, loadData, logAudit, bahanBaku }) {
   return (
     <div>
       <h2 style={{ fontSize: '17px', fontWeight: 600, marginBottom: '4px' }}>📤 Upload Master Bahan</h2>
-      <p style={{ fontSize: '12px', color: C.text3, marginBottom: '14px' }}>Upload Excel — owner only · Kolom yang dibaca: Nama, Kategori, Divisi, Satuan, Isi Kemasan, <strong>Stok Saat Ini</strong>, Harga</p>
+      <p style={{ fontSize: '12px', color: C.text3, marginBottom: '14px' }}>Upload Excel — owner only · Kolom yang dibaca: Nama, Kategori, Divisi, Satuan, Isi Kemasan, <strong>Stok Saat Ini</strong>, Harga, <strong>Kode Accurate</strong></p>
 
       {lastImport && (
         <div style={{ background: C.greenBg, border: `1px solid ${C.greenBorder}`, borderRadius: '10px', padding: '14px', marginBottom: '14px' }}>
