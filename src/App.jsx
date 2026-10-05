@@ -1,7 +1,7 @@
 import { useState, useEffect, useMemo } from 'react'
 import { supabase, generateId, formatTanggal, formatTanggalID, formatRupiah, daysFromNow } from './supabase'
 import * as XLSX from 'xlsx'
-import { C, S, Icon, uploadFotoToStorage } from './shared'
+import { C, S, Icon, uploadFotoToStorage, compressImage } from './shared'
 import { PenjualanView, PengeluaranKasirView, RekapHarianView, TalanganCard } from './Kasir'
 
 // =====================================================
@@ -647,7 +647,7 @@ function AppShell(props) {
         <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
           <img src="/icons/logo-cokelat.png" alt="" style={{ height: '34px', width: 'auto' }} />
           <div>
-          <div style={{ fontFamily: "'Bebas Neue', 'Plus Jakarta Sans', sans-serif", fontSize: '24px', letterSpacing: '1px', lineHeight: 1, whiteSpace: 'nowrap' }}>PICCOLO CORNER</div>
+          <div style={{ fontSize: '17px', fontWeight: 800, letterSpacing: '-0.3px', lineHeight: 1.1, whiteSpace: 'nowrap' }}>Piccolo Corner</div>
           <div style={{ fontSize: '12px', fontWeight: 600, color: C.sunDark }}>
             {userName || (role === 'owner' ? 'Owner' : 'Staff')} · {role === 'owner' ? 'Owner' : 'Staff'} · {formatTanggalID(new Date())}
           </div>
@@ -1968,90 +1968,60 @@ function InputNotaView({ bahanBaku, showToast, loadData, logAudit, setView, user
   const [fotoFile, setFotoFile] = useState(null)
   const [catatan, setCatatan] = useState('')
   const [submitting, setSubmitting] = useState(false)
+  const [mode, setMode] = useState('foto')          // 'foto' = upload nota, dibaca otomatis · 'manual' = ketik sendiri
   const [aiScanning, setAiScanning] = useState(false)
-  const [aiResult, setAiResult] = useState(null) // hasil scan mentah dari AI
+  const [aiResult, setAiResult] = useState(null)   // ringkasan hasil scan: { n, cocok, tidakCocok, toko, totalNota }
+  const [aiError, setAiError] = useState('')
 
-  // ─── AI Scan Nota ───
+  // ─── Scan nota lewat Edge Function "scan-nota" (kunci API aman di server) ───
   const scanNotaWithAI = async (base64ImageFull) => {
     setAiScanning(true)
     setAiResult(null)
+    setAiError('')
     try {
-      // Ambil hanya data base64 tanpa prefix
       const base64Data = base64ImageFull.split(',')[1]
       const mediaType  = base64ImageFull.split(';')[0].split(':')[1] || 'image/jpeg'
+      const master = bahanBaku
+        .filter(b => b.is_active !== false)
+        .map(b => ({ id: String(b.id), nama: b.nama, satuan_dasar: b.satuan_dasar, kemasan: b.kemasan || null, qty_per_kemasan: b.qty_per_kemasan || null }))
 
-      const response = await fetch('https://api.anthropic.com/v1/messages', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          model: 'claude-sonnet-4-20250514',
-          max_tokens: 1000,
-          messages: [{
-            role: 'user',
-            content: [
-              {
-                type: 'image',
-                source: { type: 'base64', media_type: mediaType, data: base64Data }
-              },
-              {
-                type: 'text',
-                text: `Baca nota belanja ini. Ekstrak semua item yang dibeli.
-Balas HANYA dengan JSON array, tanpa teks lain, tanpa markdown, tanpa backtick.
-Format tiap item: {"nama": "nama bahan", "jumlah": angka, "satuan": "satuan", "harga": angka_total_item}
-Contoh: [{"nama":"Bawang putih","jumlah":1,"satuan":"kg","harga":28000},{"nama":"Ayam","jumlah":2,"satuan":"kg","harga":84000}]
-Aturan:
-- nama: tulis lengkap, perbaiki singkatan (bwg putih → Bawang putih)
-- jumlah: angka saja
-- satuan: kg / gram / liter / ml / pcs / ikat / buah / botol
-- harga: total harga item itu (bukan harga satuan)
-- Jika tidak bisa baca, kembalikan array kosong []`
-              }
-            ]
-          }]
-        })
+      const { data, error } = await supabase.functions.invoke('scan-nota', {
+        body: { image: base64Data, mediaType, master },
       })
-
-      const data = await response.json()
-      const text = data.content?.find(c => c.type === 'text')?.text || '[]'
-      const parsed = JSON.parse(text.trim())
-
-      if (!Array.isArray(parsed) || parsed.length === 0) {
-        showToast('⚠️ AI tidak bisa baca nota ini. Isi manual ya.')
+      if (error) throw new Error(error.message || 'Tidak bisa menghubungi server scan')
+      if (!data?.ok) {
+        if (data?.code === 'NO_KEY') throw new Error('Scan otomatis belum diaktifkan owner. Sementara ketik manual dulu ya.')
+        throw new Error(data?.error || 'Scan gagal')
+      }
+      if (!data.terbaca || !Array.isArray(data.items) || data.items.length === 0) {
+        setAiError('Nota tidak terbaca. Coba foto ulang lebih terang & lurus, atau pilih "Ketik manual".')
         setAiScanning(false)
         return
       }
 
-      // Cocokkan nama bahan dari AI dengan master bahan_baku
-      const newItems = parsed.map(item => {
-        const nameLower = item.nama.toLowerCase()
-        // Cari exact match dulu, lalu partial match
-        const match = bahanBaku.find(b =>
-          b.kategori === 'mentah' && (
-            b.nama.toLowerCase() === nameLower ||
-            b.nama.toLowerCase().includes(nameLower) ||
-            nameLower.includes(b.nama.toLowerCase())
-          )
-        )
+      const newItems = data.items.map(item => {
+        const match = item.bahan_id ? bahanBaku.find(b => String(b.id) === String(item.bahan_id)) : null
         return {
-          bahan_id:         match ? match.id : '',
-          namaAI:           item.nama,       // simpan nama dari AI untuk tampilkan jika tidak match
-          jumlah:           String(item.jumlah || ''),
-          satuan:           match ? match.satuan_dasar : (item.satuan || ''),
-          harga:            String(item.harga || ''),
-          tanggal_expired:  match?.is_perishable && match?.umur_simpan_hari
+          bahan_id:        match ? match.id : '',
+          namaAI:          item.nama_nota,
+          yakin:           item.yakin !== false,
+          jumlah:          String(item.jumlah ?? ''),
+          satuan:          item.satuan || (match ? match.satuan_dasar : ''),
+          harga:           String(Math.round(item.harga_total || 0) || ''),
+          tanggal_expired: match?.is_perishable && match?.umur_simpan_hari
             ? (() => { const d = new Date(); d.setDate(d.getDate() + match.umur_simpan_hari); return d.toISOString().split('T')[0] })()
             : '',
         }
       })
 
       setItems(newItems)
-      setAiResult(parsed)
-
-      const cocok   = newItems.filter(i => i.bahan_id).length
-      const tidakCocok = newItems.filter(i => !i.bahan_id).length
-      showToast(`✅ AI baca ${parsed.length} item · ${cocok} cocok · ${tidakCocok} perlu pilih manual`)
+      const cocok = newItems.filter(i => i.bahan_id).length
+      setAiResult({ n: newItems.length, cocok, tidakCocok: newItems.length - cocok, toko: data.toko, totalNota: data.total_nota })
+      if (data.tanggal && /^\d{4}-\d{2}-\d{2}$/.test(data.tanggal)) setTanggal(data.tanggal)
+      showToast(`✅ ${newItems.length} item terbaca · ${cocok} cocok master`)
     } catch (err) {
-      showToast('❌ Scan gagal: ' + err.message)
+      setAiError(err.message)
+      showToast('❌ ' + err.message)
     }
     setAiScanning(false)
   }
@@ -2077,23 +2047,25 @@ Aturan:
 
   const totalHarga = items.reduce((s, i) => s + (Number(i.harga) || 0), 0)
 
-  const handleFoto = (e) => {
+  const handleFoto = async (e) => {
     const file = e.target.files?.[0]
     if (!file) return
-    if (file.size > 5 * 1024 * 1024) { showToast('❌ Foto max 5MB'); return }
-    setFotoFile(file)
+    if (file.size > 15 * 1024 * 1024) { showToast('❌ Foto terlalu besar (max 15MB)'); return }
+    let kecil = file
+    try { kecil = await compressImage(file, 1600, 0.85) } catch { /* pakai file asli */ }
+    setFotoFile(kecil)
     const reader = new FileReader()
     reader.onload = (ev) => {
       const b64 = ev.target.result
       setFoto(b64)
-      scanNotaWithAI(b64)   // langsung scan setelah foto dipilih
+      if (mode === 'foto') scanNotaWithAI(b64)   // langsung dibaca setelah foto dipilih
     }
-    reader.readAsDataURL(file)
+    reader.readAsDataURL(kecil)
   }
 
   const handleSubmit = async () => {
     if (!yangBelanja) { showToast('❌ Isi nama'); return }
-    if (!foto) { showToast('❌ Foto nota wajib'); return }
+    if (mode === 'foto' && !foto) { showToast('❌ Upload foto nota dulu, atau pilih "Ketik manual"'); return }
     if (sumberDana === 'talangan' && !dibayarOleh.trim()) { showToast('❌ Isi siapa yang menalangi'); return }
     const validItems = items.filter(i => i.bahan_id && i.jumlah && i.harga)
     if (validItems.length === 0) { showToast('❌ Minimal 1 item'); return }
@@ -2190,6 +2162,57 @@ Aturan:
     darurat: { color: 'red', text: '🔴 Belanja Darurat: Untuk situasi mendesak. WA owner dulu, lalu beli pakai kas kasir.' }
   }[jalur]
 
+  const fotoBlock = (
+    <FormRow label={mode === 'foto' ? 'Foto nota' : 'Foto nota (opsional)'}>
+      <input type="file" accept="image/*" onChange={handleFoto} style={{ ...S.input, padding: '8px' }} />
+      <div style={{ fontSize: '11px', color: C.text3, marginTop: '4px' }}>
+        📸 Foto langsung atau pilih dari galeri / WhatsApp. {mode === 'foto' ? 'Daftar barang akan terisi otomatis.' : ''}
+      </div>
+      {aiScanning && (
+        <div style={{ background: C.blueBg, color: C.blue, padding: '10px 12px', borderRadius: '7px', marginTop: '8px', fontSize: '12px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+          <span style={{ fontSize: '16px' }}>🔎</span>
+          <span>Membaca nota... biasanya 10-20 detik</span>
+        </div>
+      )}
+      {aiResult && !aiScanning && (
+        <div style={{ background: C.greenBg, color: C.green, padding: '8px 12px', borderRadius: '7px', marginTop: '8px', fontSize: '11px', lineHeight: 1.5 }}>
+          ✅ {aiResult.n} barang terbaca{aiResult.toko ? ` dari ${aiResult.toko}` : ''} · {aiResult.cocok} cocok master
+          {aiResult.tidakCocok > 0 && ` · ${aiResult.tidakCocok} perlu dipilih manual`}
+          {aiResult.totalNota ? <><br />Total di nota: <strong>{formatRupiah(aiResult.totalNota)}</strong> — cocokkan dengan total di bawah.</> : null}
+          <br />Cek daftar barang di bawah, koreksi kalau ada yang salah.
+        </div>
+      )}
+      {aiError && !aiScanning && (
+        <div style={{ background: C.redBg, color: C.red, padding: '8px 12px', borderRadius: '7px', marginTop: '8px', fontSize: '11px', lineHeight: 1.5 }}>
+          ⚠️ {aiError}
+          <div style={{ marginTop: '6px', display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
+            {foto && <button onClick={() => scanNotaWithAI(foto)} style={{ ...S.btn, ...S.btnPrimary, padding: '6px 10px', fontSize: '11px' }}>🔁 Coba baca lagi</button>}
+            <button onClick={() => { setMode('manual'); setAiError('') }} style={{ ...S.btn, background: C.panel, border: `1px solid ${C.border}`, color: C.text, padding: '6px 10px', fontSize: '11px' }}>✍️ Ketik manual saja</button>
+          </div>
+        </div>
+      )}
+      {items.some(i => !i.bahan_id && i.namaAI) && !aiScanning && (
+        <div style={{ background: C.yellowBg, color: C.yellow, padding: '8px 12px', borderRadius: '7px', marginTop: '6px', fontSize: '11px' }}>
+          ⚠️ Belum ketemu di master: {items.filter(i => !i.bahan_id && i.namaAI).map(i => i.namaAI).join(', ')}. Pilih barangnya dari dropdown, atau hapus barisnya kalau bukan bahan.
+        </div>
+      )}
+      {foto && <img src={foto} alt="" style={{ maxWidth: '140px', marginTop: '8px', borderRadius: '6px' }} />}
+    </FormRow>
+  )
+
+  const ModeBtn = ({ id, icon, title, sub }) => {
+    const on = mode === id
+    return (
+      <button onClick={() => { setMode(id); setAiError('') }} style={{
+        flex: 1, textAlign: 'left', padding: '10px 12px', borderRadius: '12px', cursor: 'pointer', font: 'inherit',
+        background: on ? C.sun : C.panel, color: C.text, border: `1.5px solid ${on ? C.sun : C.border}`,
+      }}>
+        <div style={{ fontSize: '13px', fontWeight: 800 }}>{icon} {title}</div>
+        <div style={{ fontSize: '10.5px', color: on ? C.sunDark : C.text3, marginTop: '2px', lineHeight: 1.35 }}>{sub}</div>
+      </button>
+    )
+  }
+
   return (
     <div>
       <h2 style={{ fontSize: '17px', fontWeight: 600, marginBottom: '4px' }}>🧾 Input Nota Belanja</h2>
@@ -2216,7 +2239,6 @@ Aturan:
           <option value="transfer_toko">🏦 Transfer rekening toko (BCA)</option>
           <option value="qris_toko">📱 QRIS toko</option>
           <option value="talangan">🙋 Ditalangi dulu (Tissa / Diandra / staff)</option>
-          <option value="transfer_owner">💸 Transfer owner (lama)</option>
         </select>
         {sumberDana === 'talangan' && (
           <input value={dibayarOleh} onChange={e => setDibayarOleh(e.target.value)} placeholder="Siapa yang bayar dulu? misal: Tissa, Diandra, Hans"
@@ -2228,7 +2250,17 @@ Aturan:
       <FormRow label="Yang belanja"><input type="text" value={yangBelanja} onChange={e => setYangBelanja(e.target.value)} placeholder="Nama..." style={S.input} /></FormRow>
 
       <hr style={{ border: 'none', borderTop: `1px solid ${C.panel2}`, margin: '14px 0' }} />
-      <div style={{ fontSize: '12px', color: C.text3, fontWeight: 500, marginBottom: '8px' }}>🛍️ Detail barang yang dibeli:</div>
+
+      <div style={{ display: 'flex', gap: '8px', marginBottom: '12px' }}>
+        <ModeBtn id="foto" icon="📷" title="Upload nota" sub="Foto notanya, barang terisi otomatis. Cocok untuk Lotte, supermarket, toko grosir." />
+        <ModeBtn id="manual" icon="✍️" title="Ketik manual" sub="Kalau belanja pasar, nota tidak ada, atau tulisannya tidak terbaca." />
+      </div>
+
+      {mode === 'foto' && fotoBlock}
+
+      <div style={{ fontSize: '12px', color: C.text3, fontWeight: 500, marginBottom: '8px' }}>
+        🛍️ Detail barang yang dibeli{mode === 'foto' && !aiResult ? ' (terisi otomatis setelah foto dibaca)' : ''}:
+      </div>
 
       {items.map((item, idx) => {
         const ba = bahanBaku.find(x => x.id === item.bahan_id)
@@ -2239,13 +2271,18 @@ Aturan:
           ? (Number(item.harga) / stokTambahPreview) : null
 
         return (
-          <div key={idx} style={{ background: C.panel2, padding: '10px', borderRadius: '8px', marginBottom: '8px' }}>
+          <div key={idx} style={{ background: C.panel2, padding: '10px', borderRadius: '8px', marginBottom: '8px', border: item.namaAI && !item.bahan_id ? `1.5px solid ${C.yellowBorder}` : 'none' }}>
+            {item.namaAI && (
+              <div style={{ fontSize: '10.5px', color: item.yakin === false ? C.red : C.text3, marginBottom: '4px' }}>
+                Di nota: <strong>{item.namaAI}</strong>{item.yakin === false ? ' · angka kurang jelas, cek ya' : ''}
+              </div>
+            )}
             <div style={{ display: 'grid', gridTemplateColumns: '2fr auto', gap: '6px', marginBottom: '6px', alignItems: 'end' }}>
               <SearchableSelect
                 options={bahanBaku.map(b => ({ value: b.id, label: b.nama + (b.kategori !== 'mentah' ? ` (${b.kategori})` : ''), stock: b.stok_saat_ini, satuan: b.satuan_dasar }))}
                 value={item.bahan_id}
                 onChange={val => updateItem(idx, 'bahan_id', val)}
-                placeholder={item.namaAI ? `AI: "${item.namaAI}" — pilih yang cocok` : 'Cari nama barang...'}
+                placeholder={item.namaAI ? `Pilih barang untuk "${item.namaAI}"` : 'Cari nama barang...'}
                 showStock={true}
               />
               <button onClick={() => removeItem(idx)} style={{ ...S.btn, ...S.btnDanger, padding: '9px 10px' }}>✕</button>
@@ -2287,33 +2324,7 @@ Aturan:
         💰 Total: <strong>{formatRupiah(totalHarga)}</strong>
       </div>
 
-      <FormRow label="Foto nota (wajib) — AI akan scan otomatis">
-        <input type="file" accept="image/*" onChange={handleFoto}
-          style={{ ...S.input, padding: '8px' }}
-          capture={undefined}
-        />
-        <div style={{ fontSize: '11px', color: C.text3, marginTop: '4px' }}>
-          📸 Ambil foto langsung, atau upload dari galeri / WhatsApp
-        </div>
-        {aiScanning && (
-          <div style={{ background: C.blueBg, color: C.blue, padding: '10px 12px', borderRadius: '7px', marginTop: '8px', fontSize: '12px', display: 'flex', alignItems: 'center', gap: '8px' }}>
-            <span style={{ fontSize: '16px' }}>🤖</span>
-            <span>AI sedang membaca nota... sebentar ya</span>
-          </div>
-        )}
-        {aiResult && !aiScanning && (
-          <div style={{ background: C.greenBg, color: C.green, padding: '8px 12px', borderRadius: '7px', marginTop: '8px', fontSize: '11px' }}>
-            ✅ AI selesai scan · {aiResult.length} item terbaca · Cek form di atas, koreksi jika ada yang salah
-          </div>
-        )}
-        {/* Tampilkan item yang tidak cocok dengan master — perlu dipilih manual */}
-        {items.some(i => !i.bahan_id && i.namaAI) && (
-          <div style={{ background: C.yellowBg, color: C.yellow, padding: '8px 12px', borderRadius: '7px', marginTop: '6px', fontSize: '11px' }}>
-            ⚠️ {items.filter(i => !i.bahan_id && i.namaAI).map(i => i.namaAI).join(', ')} — tidak ada di master. Pilih manual dari dropdown.
-          </div>
-        )}
-        {foto && <img src={foto} alt="" style={{ maxWidth: '140px', marginTop: '8px', borderRadius: '6px' }} />}
-      </FormRow>
+      {mode === 'manual' && fotoBlock}
 
       <FormRow label="Catatan"><textarea rows={2} value={catatan} onChange={e => setCatatan(e.target.value)} style={S.input} /></FormRow>
 
