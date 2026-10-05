@@ -647,7 +647,7 @@ function AppShell(props) {
         <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
           <img src="/icons/logo-cokelat.png" alt="" style={{ height: '34px', width: 'auto' }} />
           <div>
-          <div style={{ fontFamily: "'Bebas Neue', 'Plus Jakarta Sans', sans-serif", fontSize: '26px', letterSpacing: '1px', lineHeight: 1 }}>PICCOLO CORNER</div>
+          <div style={{ fontFamily: "'Bebas Neue', 'Plus Jakarta Sans', sans-serif", fontSize: '24px', letterSpacing: '1px', lineHeight: 1, whiteSpace: 'nowrap' }}>PICCOLO CORNER</div>
           <div style={{ fontSize: '12px', fontWeight: 600, color: C.sunDark }}>
             {userName || (role === 'owner' ? 'Owner' : 'Staff')} · {role === 'owner' ? 'Owner' : 'Staff'} · {formatTanggalID(new Date())}
           </div>
