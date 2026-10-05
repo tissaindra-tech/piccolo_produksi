@@ -2081,7 +2081,7 @@ function InputNotaView({ bahanBaku, showToast, loadData, logAudit, setView, user
       if (drive.ok && drive.text) {
         const hasil = parseNotaText(drive.text, bahanBaku.filter(b => b.kategori === 'mentah'))
         if (hasil.items.length) { terapkanHasil(hasil, 'ocr'); setAiScanning(false); return }
-        setAiError('Foto sudah tersimpan di Drive, tapi tulisan di nota belum bisa dibaca. Coba foto ulang lebih terang & lurus, atau ketik manual.')
+        setAiError('Foto sudah tersimpan di Drive, tapi tulisan di nota belum bisa dibaca. Coba foto ulang lebih terang & lurus, atau ketik manual.' + (drive.ocrError ? ' (' + drive.ocrError + ')' : ''))
       } else if (claude.code === 'NO_KEY' && !driveUrl) {
         setAiError('Pembacaan otomatis belum diaktifkan owner (Google Drive belum dihubungkan). Ketik manual dulu ya.')
       } else if (claude.ok === false && claude.code !== 'NO_KEY') {

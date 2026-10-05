@@ -6,11 +6,10 @@
 // Cara pasang (sekali saja, ~5 menit):
 // 1. Buka https://script.google.com  ->  "Proyek baru"
 // 2. Hapus isi editor, tempel seluruh isi file ini, Ctrl+S
-// 3. Di kiri, "Layanan" (tanda +)  ->  pilih "Drive API"  ->  Tambahkan
-// 4. Kanan atas "Terapkan" (Deploy)  ->  "Deployment baru"
+// 3. Kanan atas "Terapkan" (Deploy)  ->  "Deployment baru"
 //    Jenis: Aplikasi web · Jalankan sebagai: Saya · Siapa yang punya akses: Siapa saja
 //    ->  Terapkan  ->  izinkan akses akun Google  ->  salin "URL aplikasi web"
-// 5. Tempel URL itu di aplikasi Piccolo: Dashboard owner  ->  Google Drive  ->  Atur
+// 4. Tempel URL itu di aplikasi Piccolo: Dashboard owner  ->  Google Drive  ->  Atur
 // ============================================================
 
 var ROOT_FOLDER = 'Piccolo Corner - Foto Aplikasi';
@@ -31,18 +30,26 @@ function doPost(e) {
     var blob = Utilities.newBlob(bytes, body.mediaType || 'image/jpeg', body.nama || ('foto_' + Date.now() + '.jpg'));
     var file = folder.createFile(blob);
 
-    var text = null;
+    var text = null, ocrError = null;
     if (body.ocr) {
-      // Drive mengubah gambar menjadi Google Doc sambil menjalankan OCR
-      var doc = Drive.Files.create(
-        { name: 'ocr_' + file.getName(), mimeType: 'application/vnd.google-apps.document', parents: [folder.getId()] },
-        blob,
-        { ocrLanguage: 'id' }
-      );
-      text = DocumentApp.openById(doc.id).getBody().getText();
-      DriveApp.getFileById(doc.id).setTrashed(true);
+      // Drive menyalin gambar menjadi Google Doc sambil menjalankan OCR (lewat API Drive biasa,
+      // tidak perlu menambah layanan apa pun di editor)
+      var res = UrlFetchApp.fetch('https://www.googleapis.com/drive/v3/files/' + file.getId() + '/copy?ocrLanguage=id&fields=id', {
+        method: 'post',
+        contentType: 'application/json',
+        headers: { Authorization: 'Bearer ' + ScriptApp.getOAuthToken() },
+        payload: JSON.stringify({ name: 'ocr_' + file.getName(), mimeType: 'application/vnd.google-apps.document', parents: [folder.getId()] }),
+        muteHttpExceptions: true
+      });
+      if (res.getResponseCode() >= 200 && res.getResponseCode() < 300) {
+        var docId = JSON.parse(res.getContentText()).id;
+        text = DocumentApp.openById(docId).getBody().getText();
+        DriveApp.getFileById(docId).setTrashed(true);
+      } else {
+        ocrError = 'OCR gagal (' + res.getResponseCode() + '): ' + res.getContentText().slice(0, 200);
+      }
     }
-    return keluar({ ok: true, fileUrl: file.getUrl(), fileId: file.getId(), text: text });
+    return keluar({ ok: true, fileUrl: file.getUrl(), fileId: file.getId(), text: text, ocrError: ocrError });
   } catch (err) {
     return keluar({ ok: false, error: String(err && err.message || err) });
   }
