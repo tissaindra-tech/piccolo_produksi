@@ -81,7 +81,7 @@ function Login({ onLogin }) {
     return (
       <div style={{ minHeight: '100vh', background: C.bg, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '20px' }}>
         <div style={{ textAlign: 'center' }}>
-          <div style={{ fontSize: '36px' }}>☕</div>
+          <img src="/icons/logo-hitam.png" alt="Piccolo Corner" style={{ width: '150px', height: 'auto', margin: '0 auto 6px', display: 'block' }} />
           <div style={{ fontSize: '13px', color: C.text3, marginTop: '8px' }}>Memuat...</div>
         </div>
       </div>
@@ -94,7 +94,7 @@ function Login({ onLogin }) {
       <div style={{ minHeight: '100vh', background: C.bg, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '20px' }}>
         <div style={{ background: C.panel, borderRadius: '16px', padding: '28px 20px', maxWidth: '380px', width: '100%', boxShadow: '0 4px 20px rgba(0,0,0,0.08)' }}>
           <div style={{ textAlign: 'center', marginBottom: '20px' }}>
-            <div style={{ fontSize: '36px' }}>☕</div>
+            <img src="/icons/logo-hitam.png" alt="Piccolo Corner" style={{ width: '150px', height: 'auto', margin: '0 auto 6px', display: 'block' }} />
             <h1 style={{ fontSize: '18px', fontWeight: 600, color: C.text, margin: '8px 0 4px' }}>Piccolo Corner</h1>
             <p style={{ fontSize: '12px', color: C.text3 }}>Pilih namamu untuk masuk</p>
           </div>
@@ -644,10 +644,13 @@ function AppShell(props) {
     <div style={{ width: '100%', minHeight: '100vh' }}>
       {/* Header kuning sunset */}
       <div style={{ padding: '14px 20px', background: C.sun, color: C.text, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-        <div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+          <img src="/icons/logo-cokelat.png" alt="" style={{ height: '34px', width: 'auto' }} />
+          <div>
           <div style={{ fontSize: '18px', fontWeight: 800, letterSpacing: '-0.3px' }}>Piccolo Corner</div>
           <div style={{ fontSize: '12px', fontWeight: 600, color: C.sunDark }}>
             {userName || (role === 'owner' ? 'Owner' : 'Staff')} · {role === 'owner' ? 'Owner' : 'Staff'} · {formatTanggalID(new Date())}
+          </div>
           </div>
         </div>
         <button onClick={() => { handleLogout() }} aria-label="Ganti user" style={{
