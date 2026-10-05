@@ -15,7 +15,7 @@ const METODE = [
   ['tunai', '💵 Tunai'],
   ['qris', '📱 QRIS'],
   ['transfer', '🏦 Transfer'],
-  ['kartu', '💳 Debit / Kredit'],
+  ['kartu', '💳 Kartu / EDC BCA'],
   ['online', '🛵 GoFood / Grab / Shopee'],
   ['lainnya', '➕ Lainnya'],
 ]
@@ -104,7 +104,8 @@ function DatePicker({ value, onChange }) {
 // =====================================================
 // 1. PENJUALAN HARIAN
 // =====================================================
-export function PenjualanView({ showToast, userName, setUserName, loadData }) {
+export function PenjualanView({ showToast, userName, setUserName, loadData, role }) {
+  const isOwner = role === 'owner'
   const [tab, setTab] = useState('input')
   const [tanggal, setTanggal] = useState(formatTanggal())
   const [existing, setExisting] = useState(null)
@@ -114,14 +115,22 @@ export function PenjualanView({ showToast, userName, setUserName, loadData }) {
   const [catatan, setCatatan] = useState('')
   const [foto, setFoto] = useState('')
   const [fotoFile, setFotoFile] = useState(null)
+  const [fotoEdc, setFotoEdc] = useState('')
+  const [fotoEdcFile, setFotoEdcFile] = useState(null)
   const [yangInput, setYangInput] = useState(userName)
   const [saving, setSaving] = useState(false)
   const [history, setHistory] = useState([])
+  const [justSaved, setJustSaved] = useState(null)
 
   const loadDate = async (tgl) => {
     const { data } = await supabase.from('penjualan_harian').select('*').eq('tanggal', tgl).maybeSingle()
     setExisting(data || null)
-    if (data) {
+    setJustSaved(null)
+    if (data && !isOwner) {
+      // Staff tidak boleh melihat angka laporan yang sudah ada
+      setTotal(''); setMetode({ tunai: '', qris: '', transfer: '', kartu: '', online: '', lainnya: '' })
+      setJumlahTrx(''); setCatatan(''); setFoto(''); setFotoFile(null); setFotoEdc(''); setFotoEdcFile(null)
+    } else if (data) {
       setTotal(String(data.total_omzet ?? ''))
       setMetode({
         tunai: data.tunai ? String(data.tunai) : '', qris: data.qris ? String(data.qris) : '',
@@ -132,9 +141,11 @@ export function PenjualanView({ showToast, userName, setUserName, loadData }) {
       setCatatan(data.catatan || '')
       setFoto(data.foto || '')
       setFotoFile(null)
+      setFotoEdc(data.foto_edc || '')
+      setFotoEdcFile(null)
     } else {
       setTotal(''); setMetode({ tunai: '', qris: '', transfer: '', kartu: '', online: '', lainnya: '' })
-      setJumlahTrx(''); setCatatan(''); setFoto(''); setFotoFile(null)
+      setJumlahTrx(''); setCatatan(''); setFoto(''); setFotoFile(null); setFotoEdc(''); setFotoEdcFile(null)
     }
   }
   const loadHistory = async () => {
@@ -142,7 +153,7 @@ export function PenjualanView({ showToast, userName, setUserName, loadData }) {
     setHistory(data || [])
   }
   useEffect(() => { loadDate(tanggal) }, [tanggal])
-  useEffect(() => { loadHistory() }, [])
+  useEffect(() => { if (isOwner) loadHistory() }, [])
 
   const sumMetode = Object.values(metode).reduce((s, v) => s + num(v), 0)
   const adaRincian = sumMetode > 0
@@ -154,8 +165,10 @@ export function PenjualanView({ showToast, userName, setUserName, loadData }) {
     setSaving(true)
     setUserName(yangInput)
     try {
-      let fotoUrl = existing?.foto || ''
+      let fotoUrl = isOwner ? (existing?.foto || '') : ''
       if (fotoFile) fotoUrl = await uploadFotoToStorage(fotoFile, 'penjualan')
+      let fotoEdcUrl = isOwner ? (existing?.foto_edc || '') : ''
+      if (fotoEdcFile) fotoEdcUrl = await uploadFotoToStorage(fotoEdcFile, 'penjualan')
       const finalTotal = num(total) || sumMetode
       const row = {
         id: existing?.id || generateId(),
@@ -164,14 +177,15 @@ export function PenjualanView({ showToast, userName, setUserName, loadData }) {
         jumlah_transaksi: jumlahTrx ? Number(jumlahTrx) : null,
         tunai: num(metode.tunai), qris: num(metode.qris), transfer: num(metode.transfer),
         kartu: num(metode.kartu), online: num(metode.online), lainnya: num(metode.lainnya),
-        foto: fotoUrl || null, catatan: catatan.trim() || null,
+        foto: fotoUrl || null, foto_edc: fotoEdcUrl || null, catatan: catatan.trim() || null,
         yang_input: yangInput, updated_at: new Date().toISOString(),
       }
       const { error } = await supabase.from('penjualan_harian').upsert(row, { onConflict: 'tanggal' })
       if (error) throw error
       showToast(`✅ Penjualan ${formatTanggalID(tanggal)} tersimpan · ${formatRupiah(finalTotal)}`)
-      await loadDate(tanggal); await loadHistory(); loadData && loadData()
-      setTab('history')
+      await loadDate(tanggal); loadData && loadData()
+      if (isOwner) { await loadHistory(); setTab('history') }
+      else setJustSaved({ tanggal, total: finalTotal })
     } catch (e) { showToast('❌ ' + e.message) }
     setSaving(false)
   }
@@ -183,12 +197,32 @@ export function PenjualanView({ showToast, userName, setUserName, loadData }) {
       <h2 style={{ fontSize: '17px', fontWeight: 600, marginBottom: '2px' }}>💰 Penjualan Harian</h2>
       <p style={{ fontSize: '12px', color: C.text3, marginBottom: '12px' }}>Isi sekali sehari setelah tutup kasir. Menggantikan laporan di WA grup.</p>
 
-      <Tabs value={tab} onChange={setTab} items={[['input', '📝 Input'], ['history', `📅 Riwayat (${history.length})`]]} />
+      {isOwner && <Tabs value={tab} onChange={setTab} items={[['input', '📝 Input'], ['history', `📅 Riwayat (${history.length})`]]} />}
 
-      {tab === 'input' && (
+      {tab === 'input' && justSaved && !isOwner && (
+        <div style={{ background: C.greenBg, border: `1px solid ${C.greenBorder}`, borderRadius: '12px', padding: '18px', textAlign: 'center', marginBottom: '12px' }}>
+          <div style={{ fontSize: '28px' }}>✅</div>
+          <div style={{ fontSize: '15px', fontWeight: 700, color: C.green, marginTop: '4px' }}>Laporan {formatTanggalID(justSaved.tanggal)} tersimpan</div>
+          <div style={{ fontSize: '13px', color: C.green }}>{formatRupiah(justSaved.total)} · terima kasih, {yangInput}</div>
+          <div style={{ fontSize: '11px', color: C.text3, marginTop: '8px' }}>Owner sudah bisa melihatnya di Rekap Harian. Tidak perlu kirim ke WA lagi.</div>
+        </div>
+      )}
+
+      {tab === 'input' && existing && !isOwner && !justSaved && (
         <div>
           <DatePicker value={tanggal} onChange={setTanggal} />
-          {existing && (
+          <div style={{ background: C.yellowBg, border: `1px solid ${C.yellowBorder}`, borderRadius: '12px', padding: '16px', textAlign: 'center' }}>
+            <div style={{ fontSize: '24px' }}>🔒</div>
+            <div style={{ fontSize: '14px', fontWeight: 600, color: C.yellow, marginTop: '4px' }}>Tanggal ini sudah dilaporkan oleh {existing.yang_input}</div>
+            <div style={{ fontSize: '12px', color: C.yellow, marginTop: '4px' }}>Hanya owner yang bisa melihat atau mengubah laporan yang sudah masuk. Kalau ada kesalahan, hubungi Tissa atau Diandra.</div>
+          </div>
+        </div>
+      )}
+
+      {tab === 'input' && !(existing && !isOwner) && !justSaved && (
+        <div>
+          <DatePicker value={tanggal} onChange={setTanggal} />
+          {existing && isOwner && (
             <div style={{ background: C.blueBg, border: `1px solid ${C.blueBorder}`, color: C.blue, borderRadius: '8px', padding: '8px 12px', fontSize: '12px', marginBottom: '10px' }}>
               ℹ️ Tanggal ini sudah pernah diisi oleh <strong>{existing.yang_input}</strong>. Simpan akan menimpa angka lama.
             </div>
@@ -221,8 +255,10 @@ export function PenjualanView({ showToast, userName, setUserName, loadData }) {
             <input type="number" inputMode="numeric" value={jumlahTrx} onChange={e => setJumlahTrx(e.target.value)} placeholder="misal: 48" style={S.input} />
           </FormRow>
 
-          <FotoInput label="Foto laporan tutup kasir / layar POS (disarankan)" foto={foto} showToast={showToast}
+          <FotoInput label="📷 Foto 1: laporan tutup kasir / layar POS" foto={foto} showToast={showToast}
             onFile={(file, b64) => { setFotoFile(file); setFoto(b64) }} onClear={() => { setFotoFile(null); setFoto('') }} />
+          <FotoInput label="📷 Foto 2: settlement EDC BCA" foto={fotoEdc} showToast={showToast}
+            onFile={(file, b64) => { setFotoEdcFile(file); setFotoEdc(b64) }} onClear={() => { setFotoEdcFile(null); setFotoEdc('') }} />
 
           <FormRow label="Catatan (opsional)">
             <textarea value={catatan} onChange={e => setCatatan(e.target.value)} rows={2} placeholder="Hujan, ramai event, void 1 struk, dll" style={{ ...S.input, resize: 'vertical' }} />
@@ -536,6 +572,8 @@ export function RekapHarianView({ bahanBaku, showToast, setView }) {
       { Keterangan: 'Total omzet', Nilai: num(penjualan?.total_omzet) },
       ...METODE.map(([k, l]) => ({ Keterangan: `Omzet ${l.replace(/^\S+\s/, '')}`, Nilai: num(penjualan?.[k]) })),
       { Keterangan: 'Jumlah transaksi', Nilai: penjualan?.jumlah_transaksi || '' },
+      { Keterangan: 'Foto POS', Nilai: penjualan?.foto || '' },
+      { Keterangan: 'Foto settlement EDC', Nilai: penjualan?.foto_edc || '' },
       { Keterangan: 'Belanja bahan (total)', Nilai: totalBelanja },
       { Keterangan: 'Belanja bahan dari kas kasir', Nilai: belanjaKas },
       { Keterangan: 'Pengeluaran kasir (total)', Nilai: totalPengeluaran },
@@ -611,7 +649,8 @@ export function RekapHarianView({ bahanBaku, showToast, setView }) {
               ))}
             </div>
             <div style={{ fontSize: '11px', color: C.text3 }}>oleh {penjualan.yang_input}{penjualan.catatan ? ` · ${penjualan.catatan}` : ''}
-              {penjualan.foto && <button onClick={() => setFotoModal(penjualan.foto)} style={{ ...S.btn, ...S.btnSecondary, padding: '2px 8px', fontSize: '10px', marginLeft: '6px' }}>📷 Foto</button>}
+              {penjualan.foto && <button onClick={() => setFotoModal(penjualan.foto)} style={{ ...S.btn, ...S.btnSecondary, padding: '2px 8px', fontSize: '10px', marginLeft: '6px' }}>📷 POS</button>}
+              {penjualan.foto_edc && <button onClick={() => setFotoModal(penjualan.foto_edc)} style={{ ...S.btn, ...S.btnSecondary, padding: '2px 8px', fontSize: '10px', marginLeft: '6px' }}>💳 EDC</button>}
             </div>
           </div>
         )}

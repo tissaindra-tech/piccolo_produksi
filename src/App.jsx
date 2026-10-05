@@ -67,7 +67,7 @@ function Login({ onLogin }) {
     e?.preventDefault()
     if (!selectedUser) return
     if (pin === selectedUser.pin) {
-      onLogin(selectedUser.role, selectedUser.nama)
+      onLogin(selectedUser)
     } else {
       setError('PIN salah. Coba lagi.')
       setPin('')
@@ -172,7 +172,7 @@ function KelolaUserView({ showToast, logAudit }) {
   }
   useEffect(() => { load() }, [])
 
-  const openAdd = () => setForm({ id: null, nama: '', role: 'staff', divisi: 'Kitchen', pin: '', avatar: '🧑‍🍳', is_active: true })
+  const openAdd = () => setForm({ id: null, nama: '', role: 'staff', divisi: 'Kitchen', pin: '', avatar: '🧑‍🍳', is_active: true, bisa_penjualan: false })
   const openEdit = (u) => setForm({ ...u })
 
   const save = async () => {
@@ -188,6 +188,7 @@ function KelolaUserView({ showToast, logAudit }) {
         divisi: form.divisi || 'Kitchen', pin: form.pin,
         avatar: form.avatar || '👤', is_active: form.is_active !== false,
         urutan: form.urutan != null ? form.urutan : (users.length + 1),
+        bisa_penjualan: form.role === 'owner' ? true : !!form.bisa_penjualan,
       }
       const { error } = await supabase.from('app_users').upsert(row)
       if (error) throw new Error(error.message)
@@ -234,6 +235,9 @@ function KelolaUserView({ showToast, logAudit }) {
                   background: u.role === 'owner' ? C.yellowBg : C.panel2,
                   color: u.role === 'owner' ? C.yellow : C.text2,
                   border: `1px solid ${u.role === 'owner' ? C.yellowBorder : C.border}` }}>{u.role}</span>
+                {(u.role === 'owner' || u.bisa_penjualan) && (
+                  <span style={{ fontSize: '9px', fontWeight: 700, padding: '2px 7px', borderRadius: '20px', background: C.greenLightBg, color: C.greenLight, border: `1px solid ${C.greenLightBorder}` }}>💰 penjualan</span>
+                )}
               </div>
               <div style={{ fontSize: '11px', color: C.text3, marginTop: '3px' }}>
                 {u.divisi} · PIN <span style={{ fontFamily: 'monospace', letterSpacing: '2px', background: C.panel2, padding: '1px 6px', borderRadius: '5px', color: C.text2 }}>{u.pin}</span>
@@ -279,6 +283,22 @@ function KelolaUserView({ showToast, logAudit }) {
               </select>
             </div>
 
+            {form.role !== 'owner' && (
+              <div style={{ marginBottom: '13px' }}>
+                <label style={S.label}>Hak akses tambahan</label>
+                <button onClick={() => setForm({ ...form, bisa_penjualan: !form.bisa_penjualan })}
+                  style={{ width: '100%', textAlign: 'left', padding: '10px 12px', borderRadius: '8px', fontSize: '12px', fontWeight: 600, cursor: 'pointer',
+                    border: `1.5px solid ${form.bisa_penjualan ? C.greenLightBorder : C.border}`,
+                    background: form.bisa_penjualan ? C.greenLightBg : C.bg,
+                    color: form.bisa_penjualan ? C.greenLight : C.text2 }}>
+                  {form.bisa_penjualan ? '✅' : '☐'} Boleh input laporan penjualan kasir
+                </button>
+                <p style={{ fontSize: '10px', color: C.text3, marginTop: '4px' }}>
+                  Staff dengan hak ini bisa mengisi laporan penjualan hari itu, tetapi tidak bisa melihat laporan hari-hari lain. Owner selalu bisa.
+                </p>
+              </div>
+            )}
+
             <div style={{ marginBottom: '13px' }}>
               <label style={S.label}>PIN (4 angka)</label>
               <input style={S.input} value={form.pin} inputMode="numeric" maxLength={4}
@@ -312,6 +332,7 @@ function KelolaUserView({ showToast, logAudit }) {
 // =====================================================
 export default function App() {
   const [role, setRole] = useState(null)
+  const [currentUser, setCurrentUser] = useState(null)
   const [userName, setUserName] = useState('')
   const [view, setView] = useState('home')
   const [bahanBaku, setBahanBaku] = useState([])
@@ -423,14 +444,17 @@ export default function App() {
 
   const isLocked = daysSinceClosing >= CLOSING_LOCK_DAYS && role !== 'owner'
 
-  if (!role) return <Login onLogin={(r, name) => { setRole(r); setUserName(name) }} />
+  if (!role) return <Login onLogin={(u) => { setCurrentUser(u); setRole(u.role); setUserName(u.nama) }} />
+
+  // Hak input laporan penjualan: owner selalu; staff hanya jika diberi hak oleh owner di menu User
+  const bisaPenjualan = role === 'owner' || !!currentUser?.bisa_penjualan
 
   const props = {
-    role, userName, setUserName, view, setView,
+    role, userName, setUserName, view, setView, currentUser, bisaPenjualan,
     bahanBaku, produksi, belanja, closing, waste, auditLog, penjualan,
     loadData, showToast, logAudit, lazyLoaded,
     daysSinceClosing, isLocked,
-    handleLogout: () => { setRole(null); setUserName(''); setView('home'); setLazyLoaded({}) }
+    handleLogout: () => { setRole(null); setCurrentUser(null); setUserName(''); setView('home'); setLazyLoaded({}) }
   }
 
   return (
@@ -608,7 +632,7 @@ function AppShell(props) {
       )}
 
       <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px', padding: '10px 12px', background: C.panel2, borderBottom: `1px solid ${C.border}` }}>
-        {tabs[role].map(t => (
+        {tabs[role].filter(t => t.id !== 'penjualan' || props.bisaPenjualan).map(t => (
           <button key={t.id} onClick={() => setView(t.id)} style={{
             padding: '7px 12px', fontSize: '11px', border: 'none',
             background: view === t.id ? C.panel : 'transparent',
@@ -660,7 +684,7 @@ function HomeView(props) {
   return <StaffHome {...props} />
 }
 
-function StaffHome({ bahanBaku, produksi, belanja, closing, penjualan, daysSinceClosing, setView, userName }) {
+function StaffHome({ bahanBaku, produksi, belanja, closing, penjualan, daysSinceClosing, setView, userName, bisaPenjualan }) {
   const today = formatTanggal()
   const totalBahan = bahanBaku.filter(b => b.is_active).length
 
@@ -717,8 +741,8 @@ function StaffHome({ bahanBaku, produksi, belanja, closing, penjualan, daysSince
     })(),
   ].sort((a, b) => (b.time || '').localeCompare(a.time || '')).slice(0, 6)
 
-  const misiDone = (produksiSelesai ? 1 : 0) + (stokSelesai ? 1 : 0) + (adaNota ? 1 : 0) + (adaPenjualan ? 1 : 0)
-  const MISI_TOTAL = 4
+  const misiDone = (produksiSelesai ? 1 : 0) + (stokSelesai ? 1 : 0) + (adaNota ? 1 : 0) + (bisaPenjualan && adaPenjualan ? 1 : 0)
+  const MISI_TOTAL = bisaPenjualan ? 4 : 3
   const misiPct  = Math.round((misiDone / MISI_TOTAL) * 100)
 
   const avatarInitial = (name) => (name || '?').slice(0, 2).toUpperCase()
@@ -823,8 +847,8 @@ function StaffHome({ bahanBaku, produksi, belanja, closing, penjualan, daysSince
 
         {/* Task 3 — Nota */}
         <div onClick={() => setView('inputnota')} style={{
-          display: 'flex', alignItems: 'center', gap: '10px', padding: '10px 0',
-          borderBottom: `1px solid ${C.panel2}`, cursor: 'pointer',
+          display: 'flex', alignItems: 'center', gap: '10px', padding: bisaPenjualan ? '10px 0' : '10px 0 0',
+          borderBottom: bisaPenjualan ? `1px solid ${C.panel2}` : 'none', cursor: 'pointer',
         }}>
           <div style={{
             width: '22px', height: '22px', borderRadius: '50%', flexShrink: 0,
@@ -849,8 +873,8 @@ function StaffHome({ bahanBaku, produksi, belanja, closing, penjualan, daysSince
           <span style={{ fontSize: '11px', color: C.text3 }}>→</span>
         </div>
 
-        {/* Task 4 — Penjualan harian (kasir) */}
-        <div onClick={() => setView('penjualan')} style={{
+        {/* Task 4 — Penjualan harian (kasir), hanya untuk yang diberi hak */}
+        {bisaPenjualan && <div onClick={() => setView('penjualan')} style={{
           display: 'flex', alignItems: 'center', gap: '10px', padding: '10px 0 0',
           cursor: 'pointer',
         }}>
@@ -875,7 +899,7 @@ function StaffHome({ bahanBaku, produksi, belanja, closing, penjualan, daysSince
             )}
           </div>
           <span style={{ fontSize: '11px', color: C.text3 }}>→</span>
-        </div>
+        </div>}
       </div>
 
       {/* Alert stok rendah */}
@@ -926,14 +950,14 @@ function StaffHome({ bahanBaku, produksi, belanja, closing, penjualan, daysSince
           <div style={{ fontSize: '18px', marginBottom: '3px' }}>🗑️</div>
           Catat waste
         </button>
-        <button onClick={() => setView('penjualan')} style={{
+        {bisaPenjualan && <button onClick={() => setView('penjualan')} style={{
           padding: '13px 10px', fontSize: '12px', fontWeight: 600, textAlign: 'center',
           background: C.greenLightBg, color: C.greenLight, border: `1.5px solid ${C.greenLightBorder}`,
           borderRadius: '10px', cursor: 'pointer', lineHeight: 1.3,
         }}>
           <div style={{ fontSize: '18px', marginBottom: '3px' }}>💰</div>
           Laporan penjualan
-        </button>
+        </button>}
         <button onClick={() => setView('pengeluaran')} style={{
           padding: '13px 10px', fontSize: '12px', fontWeight: 600, textAlign: 'center',
           background: C.panel2, color: C.text2, border: `1.5px solid ${C.border}`,
