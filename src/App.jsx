@@ -1,7 +1,8 @@
 import { useState, useEffect, useMemo } from 'react'
 import { supabase, generateId, formatTanggal, formatTanggalID, formatRupiah, daysFromNow } from './supabase'
 import * as XLSX from 'xlsx'
-import { C, S, Icon, uploadFotoToStorage, compressImage } from './shared'
+import { C, S, Icon, uploadFotoToStorage, compressImage, salinKeDrive, setDriveContext } from './shared'
+import { parseNotaText, kirimKeDrive } from './nota'
 import { PenjualanView, PengeluaranKasirView, RekapHarianView, TalanganCard } from './Kasir'
 
 // =====================================================
@@ -462,6 +463,8 @@ export default function App() {
     return { hari: opnameHari, isToday: sinceLast === 0, sinceLast, daysTo, lastDate, nextDate, total, counted, lengkap: total > 0 && counted >= total, perOrang }
   }, [opnameHari, bahanBaku, closing])
 
+  useEffect(() => { setDriveContext(settings?.drive?.url || '', userName) }, [settings?.drive?.url, userName])
+
   const saveSetting = async (id, value) => {
     const { error } = await supabase.from('app_settings').upsert({ id, value, updated_at: new Date().toISOString() })
     if (error) { showToast('❌ ' + error.message); return }
@@ -480,7 +483,7 @@ export default function App() {
   const bisaPenjualan = role === 'owner' || !!currentUser?.bisa_penjualan
 
   const props = {
-    role, userName, setUserName, view, setView, currentUser, bisaPenjualan, opname, saveSetting,
+    role, userName, setUserName, view, setView, currentUser, bisaPenjualan, opname, saveSetting, settings,
     bahanBaku, produksi, belanja, closing, waste, auditLog, penjualan,
     loadData, showToast, logAudit, lazyLoaded,
     daysSinceClosing, isLocked,
@@ -1073,6 +1076,53 @@ function BigBtn({ color, icon, label, onClick }) {
   )
 }
 
+function DriveCard({ settings, saveSetting, showToast }) {
+  const tersimpan = settings?.drive?.url || ''
+  const [url, setUrl] = useState(tersimpan)
+  const [buka, setBuka] = useState(false)
+  const [tes, setTes] = useState('')
+  useEffect(() => { setUrl(tersimpan) }, [tersimpan])
+  const valid = /^https:\/\/script\.google\.com\/macros\/s\/[\w-]+\/exec$/.test(url.trim())
+  const simpan = async () => {
+    if (url.trim() && !valid) { showToast('❌ Link harus berbentuk https://script.google.com/macros/s/.../exec'); return }
+    await saveSetting('drive', { url: url.trim() })
+    showToast(url.trim() ? '✅ Google Drive terhubung' : 'Google Drive dilepas')
+    setBuka(false)
+  }
+  const cobaTes = async () => {
+    setTes('Mengetes...')
+    const r = await kirimKeDrive({ url: url.trim(), dataUrl: 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==', nama: 'tes_koneksi.png', folder: 'tes', ocr: false, timeoutMs: 30000 })
+    setTes(r.ok ? '✅ Berhasil. Cek folder "Piccolo Corner - Foto Aplikasi / tes" di Drive.' : '❌ ' + (r.error || 'gagal'))
+  }
+  return (
+    <div style={{ background: C.panel, border: `1px solid ${C.border}`, borderRadius: '12px', padding: '12px 14px', marginBottom: '14px' }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '8px' }}>
+        <div>
+          <div style={{ fontSize: '13px', fontWeight: 600 }}>☁️ Google Drive</div>
+          <div style={{ fontSize: '11px', color: tersimpan ? C.green : C.text3 }}>
+            {tersimpan ? 'Terhubung · semua foto nota & laporan tersalin otomatis' : 'Belum terhubung · foto hanya tersimpan di aplikasi'}
+          </div>
+        </div>
+        <button onClick={() => setBuka(b => !b)} style={{ ...S.btn, background: C.panel2, color: C.text, padding: '6px 10px', fontSize: '11px' }}>{buka ? 'Tutup' : 'Atur'}</button>
+      </div>
+      {buka && (
+        <div style={{ marginTop: '10px' }}>
+          <input id="drive-url" value={url} onChange={e => setUrl(e.target.value)} placeholder="https://script.google.com/macros/s/..../exec"
+            style={{ ...S.input, fontSize: '12px' }} />
+          <div style={{ fontSize: '10.5px', color: C.text3, margin: '4px 0 8px', lineHeight: 1.4 }}>
+            Tempel link "Web app" dari Google Apps Script milik owner (lihat panduan). Foto nota juga dibaca lewat OCR Google, gratis.
+          </div>
+          <div style={{ display: 'flex', gap: '6px' }}>
+            <button onClick={simpan} style={{ ...S.btn, ...S.btnPrimary, flex: 1, padding: '9px' }}>Simpan</button>
+            <button onClick={cobaTes} disabled={!valid} style={{ ...S.btn, background: C.panel2, color: C.text, padding: '9px 12px', opacity: valid ? 1 : 0.5 }}>Tes</button>
+          </div>
+          {tes && <div style={{ fontSize: '11px', marginTop: '6px', color: tes.startsWith('✅') ? C.green : C.red }}>{tes}</div>}
+        </div>
+      )}
+    </div>
+  )
+}
+
 function OwnerHome(props) {
   const { bahanBaku, produksi, belanja, setView, opname, saveSetting } = props
   const [showStokLow, setShowStokLow] = useState(false)
@@ -1124,6 +1174,8 @@ function OwnerHome(props) {
       )}
 
       <TalanganCard showToast={props.showToast} />
+
+      <DriveCard settings={props.settings} saveSetting={saveSetting} showToast={props.showToast} />
 
       {showStokLow && (
         <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'flex-end', justifyContent: 'center', zIndex: 1000 }}
@@ -1957,7 +2009,7 @@ function HistoryProduksiView({ produksi, bahanBaku, showToast, loadData, logAudi
     </div>
   )
 }
-function InputNotaView({ bahanBaku, showToast, loadData, logAudit, setView, userName, setUserName, isLocked }) {
+function InputNotaView({ bahanBaku, showToast, loadData, logAudit, setView, userName, setUserName, isLocked, settings }) {
   const [tanggal, setTanggal] = useState(formatTanggal())
   const [jalur, setJalur] = useState('kecil')
   const [sumberDana, setSumberDana] = useState('kas_kasir')
@@ -1972,8 +2024,35 @@ function InputNotaView({ bahanBaku, showToast, loadData, logAudit, setView, user
   const [aiScanning, setAiScanning] = useState(false)
   const [aiResult, setAiResult] = useState(null)   // ringkasan hasil scan: { n, cocok, tidakCocok, toko, totalNota }
   const [aiError, setAiError] = useState('')
+  const [driveInfo, setDriveInfo] = useState(null)   // { fileUrl } kalau foto sudah tersalin ke Google Drive
+  const driveUrl = settings?.drive?.url || ''
 
-  // ─── Scan nota lewat Edge Function "scan-nota" (kunci API aman di server) ───
+  // Terapkan hasil pembacaan (dari Claude atau OCR Drive) ke form
+  const terapkanHasil = (data, sumber) => {
+    const newItems = data.items.map(item => {
+      const match = item.bahan_id ? bahanBaku.find(b => String(b.id) === String(item.bahan_id)) : null
+      return {
+        bahan_id:        match ? match.id : '',
+        namaAI:          item.nama_nota,
+        yakin:           item.yakin !== false,
+        jumlah:          String(item.jumlah ?? ''),
+        satuan:          item.satuan || (match ? match.satuan_dasar : ''),
+        harga:           String(Math.round(item.harga_total || 0) || ''),
+        tanggal_expired: match?.is_perishable && match?.umur_simpan_hari
+          ? (() => { const d = new Date(); d.setDate(d.getDate() + match.umur_simpan_hari); return d.toISOString().split('T')[0] })()
+          : '',
+      }
+    })
+    setItems(newItems)
+    const cocok = newItems.filter(i => i.bahan_id).length
+    setAiResult({ n: newItems.length, cocok, tidakCocok: newItems.length - cocok, toko: data.toko, totalNota: data.total_nota, sumber })
+    if (data.tanggal && /^\d{4}-\d{2}-\d{2}$/.test(data.tanggal)) setTanggal(data.tanggal)
+    showToast(`✅ ${newItems.length} barang terbaca · ${cocok} cocok master`)
+  }
+
+  // Urutan: 1) Claude lewat Edge Function (hanya kalau owner memasang kunci API)
+  //         2) OCR Google Drive (gratis) + pencocokan di aplikasi
+  //         3) kalau dua-duanya tidak ada: ketik manual
   const scanNotaWithAI = async (base64ImageFull) => {
     setAiScanning(true)
     setAiResult(null)
@@ -1982,43 +2061,34 @@ function InputNotaView({ bahanBaku, showToast, loadData, logAudit, setView, user
       const base64Data = base64ImageFull.split(',')[1]
       const mediaType  = base64ImageFull.split(';')[0].split(':')[1] || 'image/jpeg'
       const master = bahanBaku
-        .filter(b => b.is_active !== false)
+        .filter(b => b.is_active !== false && b.kategori === 'mentah')
         .map(b => ({ id: String(b.id), nama: b.nama, satuan_dasar: b.satuan_dasar, kemasan: b.kemasan || null, qty_per_kemasan: b.qty_per_kemasan || null }))
 
-      const { data, error } = await supabase.functions.invoke('scan-nota', {
-        body: { image: base64Data, mediaType, master },
-      })
-      if (error) throw new Error(error.message || 'Tidak bisa menghubungi server scan')
-      if (!data?.ok) {
-        if (data?.code === 'NO_KEY') throw new Error('Scan otomatis belum diaktifkan owner. Sementara ketik manual dulu ya.')
-        throw new Error(data?.error || 'Scan gagal')
-      }
-      if (!data.terbaca || !Array.isArray(data.items) || data.items.length === 0) {
-        setAiError('Nota tidak terbaca. Coba foto ulang lebih terang & lurus, atau pilih "Ketik manual".')
-        setAiScanning(false)
-        return
+      // Salin ke Drive (sekalian minta teks OCR) berjalan bersamaan dengan Claude
+      const driveP = driveUrl
+        ? salinKeDrive(base64ImageFull, 'belanja', tanggal, true).then(r => { if (r?.ok) setDriveInfo({ fileUrl: r.fileUrl }); return r })
+        : Promise.resolve({ ok: false })
+      const claudeP = supabase.functions.invoke('scan-nota', { body: { image: base64Data, mediaType, master } })
+        .then(({ data, error }) => error ? { ok: false, error: error.message } : (data || { ok: false }))
+        .catch(e => ({ ok: false, error: e.message }))
+
+      const claude = await claudeP
+      if (claude.ok && claude.terbaca && Array.isArray(claude.items) && claude.items.length) {
+        terapkanHasil(claude, 'claude'); setAiScanning(false); return
       }
 
-      const newItems = data.items.map(item => {
-        const match = item.bahan_id ? bahanBaku.find(b => String(b.id) === String(item.bahan_id)) : null
-        return {
-          bahan_id:        match ? match.id : '',
-          namaAI:          item.nama_nota,
-          yakin:           item.yakin !== false,
-          jumlah:          String(item.jumlah ?? ''),
-          satuan:          item.satuan || (match ? match.satuan_dasar : ''),
-          harga:           String(Math.round(item.harga_total || 0) || ''),
-          tanggal_expired: match?.is_perishable && match?.umur_simpan_hari
-            ? (() => { const d = new Date(); d.setDate(d.getDate() + match.umur_simpan_hari); return d.toISOString().split('T')[0] })()
-            : '',
-        }
-      })
-
-      setItems(newItems)
-      const cocok = newItems.filter(i => i.bahan_id).length
-      setAiResult({ n: newItems.length, cocok, tidakCocok: newItems.length - cocok, toko: data.toko, totalNota: data.total_nota })
-      if (data.tanggal && /^\d{4}-\d{2}-\d{2}$/.test(data.tanggal)) setTanggal(data.tanggal)
-      showToast(`✅ ${newItems.length} item terbaca · ${cocok} cocok master`)
+      const drive = await driveP
+      if (drive.ok && drive.text) {
+        const hasil = parseNotaText(drive.text, bahanBaku.filter(b => b.kategori === 'mentah'))
+        if (hasil.items.length) { terapkanHasil(hasil, 'ocr'); setAiScanning(false); return }
+        setAiError('Foto sudah tersimpan di Drive, tapi tulisan di nota belum bisa dibaca. Coba foto ulang lebih terang & lurus, atau ketik manual.')
+      } else if (claude.code === 'NO_KEY' && !driveUrl) {
+        setAiError('Pembacaan otomatis belum diaktifkan owner (Google Drive belum dihubungkan). Ketik manual dulu ya.')
+      } else if (claude.ok === false && claude.code !== 'NO_KEY') {
+        setAiError(claude.error || 'Nota tidak terbaca.')
+      } else {
+        setAiError(drive.error ? 'Google Drive: ' + drive.error : 'Nota tidak terbaca. Coba foto ulang lebih terang & lurus, atau ketik manual.')
+      }
     } catch (err) {
       setAiError(err.message)
       showToast('❌ ' + err.message)
@@ -2089,7 +2159,7 @@ function InputNotaView({ bahanBaku, showToast, loadData, logAudit, setView, user
       const newId = generateId()
       let fotoUrl = ''
       if (fotoFile) {
-        fotoUrl = await uploadFotoToStorage(fotoFile, 'belanja')
+        fotoUrl = await uploadFotoToStorage(fotoFile, 'belanja', { skipDrive: !!driveInfo, tanggal })
       }
       const { error: belanjaErr } = await supabase.from('belanja').insert({
         id: newId, tanggal, jalur, sumber_dana: sumberDana,
@@ -2176,7 +2246,7 @@ function InputNotaView({ bahanBaku, showToast, loadData, logAudit, setView, user
       )}
       {aiResult && !aiScanning && (
         <div style={{ background: C.greenBg, color: C.green, padding: '8px 12px', borderRadius: '7px', marginTop: '8px', fontSize: '11px', lineHeight: 1.5 }}>
-          ✅ {aiResult.n} barang terbaca{aiResult.toko ? ` dari ${aiResult.toko}` : ''} · {aiResult.cocok} cocok master
+          ✅ {aiResult.n} barang terbaca{aiResult.toko ? ` dari ${aiResult.toko}` : ''} · {aiResult.cocok} cocok master{aiResult.sumber === 'ocr' ? ' · dibaca OCR Google, cek angkanya' : ''}
           {aiResult.tidakCocok > 0 && ` · ${aiResult.tidakCocok} perlu dipilih manual`}
           {aiResult.totalNota ? <><br />Total di nota: <strong>{formatRupiah(aiResult.totalNota)}</strong> — cocokkan dengan total di bawah.</> : null}
           <br />Cek daftar barang di bawah, koreksi kalau ada yang salah.
@@ -2197,6 +2267,7 @@ function InputNotaView({ bahanBaku, showToast, loadData, logAudit, setView, user
         </div>
       )}
       {foto && <img src={foto} alt="" style={{ maxWidth: '140px', marginTop: '8px', borderRadius: '6px' }} />}
+      {driveInfo?.fileUrl && <div style={{ fontSize: '10.5px', color: C.text3, marginTop: '4px' }}>☁️ Tersimpan di Google Drive</div>}
     </FormRow>
   )
 
@@ -2252,7 +2323,7 @@ function InputNotaView({ bahanBaku, showToast, loadData, logAudit, setView, user
       <hr style={{ border: 'none', borderTop: `1px solid ${C.panel2}`, margin: '14px 0' }} />
 
       <div style={{ display: 'flex', gap: '8px', marginBottom: '12px' }}>
-        <ModeBtn id="foto" icon="📷" title="Upload nota" sub="Foto notanya, barang terisi otomatis. Cocok untuk Lotte, supermarket, toko grosir." />
+        <ModeBtn id="foto" icon="📷" title="Upload nota" sub="Foto notanya, barang terisi otomatis & tersimpan ke Google Drive. Cocok untuk Lotte, supermarket, grosir." />
         <ModeBtn id="manual" icon="✍️" title="Ketik manual" sub="Kalau belanja pasar, nota tidak ada, atau tulisannya tidak terbaca." />
       </div>
 

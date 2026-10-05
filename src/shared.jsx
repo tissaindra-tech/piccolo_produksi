@@ -3,6 +3,7 @@
 // (dipakai App.jsx dan Kasir.jsx)
 // =====================================================
 import { supabase } from './supabase'
+import { kirimKeDrive } from './nota'
 
 // Palet warna aplikasi
 export const C = {
@@ -87,7 +88,22 @@ export async function compressImage(file, maxWidth = 1200, quality = 0.75) {
 
 // ─── HELPER: Upload foto ke Supabase Storage ───
 // folder: 'produksi' | 'belanja' | 'waste' | 'penjualan' | 'pengeluaran'
-export async function uploadFotoToStorage(file, folder) {
+// Pengaturan Google Drive (Apps Script milik owner). Diisi dari app_settings id 'drive'.
+export const driveCtx = { url: '', user: '' }
+export const setDriveContext = (url, user) => { driveCtx.url = url || ''; driveCtx.user = user || '' }
+
+const fileToDataUrl = (file) => new Promise((res, rej) => { const r = new FileReader(); r.onload = e => res(e.target.result); r.onerror = rej; r.readAsDataURL(file) })
+
+// Salinan foto ke Google Drive, tidak menghentikan proses kalau gagal.
+export async function salinKeDrive(file, folder, tanggal, ocr = false) {
+  if (!driveCtx.url) return { ok: false, error: 'belum diatur' }
+  const dataUrl = typeof file === 'string' ? file : await fileToDataUrl(file)
+  const tgl = tanggal || new Date().toISOString().slice(0, 10)
+  const nama = `${tgl}_${folder}_${(driveCtx.user || 'staff').replace(/[^\w]+/g, '')}_${Date.now().toString(36)}.jpg`
+  return kirimKeDrive({ url: driveCtx.url, dataUrl, nama, folder, tanggal: tgl, ocr })
+}
+
+export async function uploadFotoToStorage(file, folder, opts = {}) {
   const compressed = await compressImage(file)
   const fileName = `${folder}/${Date.now()}_${Math.random().toString(36).slice(2)}.jpg`
   const { error } = await supabase.storage.from('foto-piccolo').upload(fileName, compressed, {
@@ -95,6 +111,7 @@ export async function uploadFotoToStorage(file, folder) {
   })
   if (error) throw new Error('Gagal upload foto: ' + error.message)
   const { data: { publicUrl } } = supabase.storage.from('foto-piccolo').getPublicUrl(fileName)
+  if (!opts.skipDrive && driveCtx.url) salinKeDrive(compressed, folder, opts.tanggal).catch(() => {})
   return publicUrl
 }
 

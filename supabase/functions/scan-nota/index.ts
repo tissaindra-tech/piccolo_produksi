@@ -24,34 +24,6 @@ type MasterItem = {
   qty_per_kemasan?: number | null;
 };
 
-const SCHEMA = {
-  type: "object",
-  properties: {
-    terbaca: { type: "boolean", description: "false jika foto bukan nota atau tidak bisa dibaca sama sekali" },
-    toko: { type: ["string", "null"] },
-    tanggal: { type: ["string", "null"], description: "YYYY-MM-DD jika tertera di nota" },
-    total_nota: { type: ["number", "null"], description: "total akhir yang tertera di nota, dalam rupiah" },
-    items: {
-      type: "array",
-      items: {
-        type: "object",
-        properties: {
-          nama_nota: { type: "string", description: "nama item persis seperti di nota, singkatan boleh dipanjangkan" },
-          bahan_id: { type: ["string", "null"], description: "id dari daftar master yang jelas sama dengan item ini, null jika tidak ada yang cocok" },
-          jumlah: { type: "number" },
-          satuan: { type: "string" },
-          harga_total: { type: "number", description: "harga total baris ini dalam rupiah, setelah diskon baris jika ada" },
-          yakin: { type: "boolean", description: "true jika angka dan pencocokan dibaca dengan jelas" },
-        },
-        required: ["nama_nota", "bahan_id", "jumlah", "satuan", "harga_total", "yakin"],
-        additionalProperties: false,
-      },
-    },
-  },
-  required: ["terbaca", "toko", "tanggal", "total_nota", "items"],
-  additionalProperties: false,
-};
-
 Deno.serve(async (req: Request) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: CORS });
   if (req.method !== "POST") return json({ ok: false, error: "Gunakan POST" }, 405);
@@ -94,15 +66,19 @@ Tugas:
 5. Jika foto bukan nota atau tidak terbaca, terbaca = false dan items kosong.
 
 Daftar master bahan (format: id | nama | satuan):
-${masterText || "(kosong)"}`;
+${masterText || "(kosong)"}
+
+Balas HANYA dengan JSON (tanpa penjelasan, tanpa markdown) persis berbentuk:
+{"terbaca": true, "toko": "nama toko atau null", "tanggal": "YYYY-MM-DD atau null", "total_nota": angka atau null,
+ "items": [{"nama_nota": "...", "bahan_id": "id master atau null", "jumlah": angka, "satuan": "...", "harga_total": angka, "yakin": true}]}`;
 
   const client = new Anthropic({ apiKey });
 
   try {
     const response = await client.messages.create({
-      model: "claude-opus-5-5",
-      max_tokens: 8000,
-      output_config: { effort: "medium", format: { type: "json_schema", schema: SCHEMA } },
+      // Haiku 4.5: model termurah; cukup untuk membaca nota.
+      model: "claude-haiku-4-5",
+      max_tokens: 4000,
       messages: [
         {
           role: "user",
@@ -112,13 +88,16 @@ ${masterText || "(kosong)"}`;
           ],
         },
       ],
-    } as Parameters<typeof client.messages.create>[0]);
+    });
 
     const text = response.content
       .filter((c: { type: string }) => c.type === "text")
       .map((c: { text?: string }) => c.text || "")
       .join("");
-    const parsed = JSON.parse(text);
+    const bersih = text.replace(/```(?:json)?/gi, "").trim();
+    const awal = bersih.indexOf("{"); const akhir = bersih.lastIndexOf("}");
+    const parsed = JSON.parse(awal >= 0 ? bersih.slice(awal, akhir + 1) : bersih);
+    if (!Array.isArray(parsed.items)) parsed.items = [];
     return json({ ok: true, ...parsed, usage: response.usage });
   } catch (err) {
     const e = err as { status?: number; message?: string };
