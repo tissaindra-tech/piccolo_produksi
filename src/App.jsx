@@ -1,7 +1,7 @@
 import { useState, useEffect, useMemo } from 'react'
 import { supabase, generateId, formatTanggal, formatTanggalID, formatRupiah, daysFromNow } from './supabase'
 import * as XLSX from 'xlsx'
-import { C, S, uploadFotoToStorage } from './shared'
+import { C, S, Icon, uploadFotoToStorage } from './shared'
 import { PenjualanView, PengeluaranKasirView, RekapHarianView, TalanganCard } from './Kasir'
 
 // =====================================================
@@ -490,8 +490,8 @@ export default function App() {
   return (
     <div style={{
       minHeight: '100vh',
-      background: '#c9bfa8',
-      fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
+      background: '#F3E3CC',
+      fontFamily: "'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif",
       color: C.text2,
       display: 'flex',
       justifyContent: 'center',
@@ -502,7 +502,7 @@ export default function App() {
         maxWidth: '520px',
         minHeight: '100vh',
         background: C.bg,
-        boxShadow: '0 0 60px rgba(26,24,20,0.18)',
+        boxShadow: '0 0 60px rgba(43,29,18,0.18)',
         position: 'relative',
       }}>
         {loading && <LoadingScreen />}
@@ -610,71 +610,63 @@ function Toast({ msg }) {
 // APP SHELL (Header + Tabs + Content)
 // =====================================================
 function AppShell(props) {
-  const { role, userName, view, setView, handleLogout, daysSinceClosing, isLocked } = props
+  const { role, userName, view, setView, handleLogout, daysSinceClosing, isLocked, bisaPenjualan } = props
+  const [moreOpen, setMoreOpen] = useState(false)
 
-  const tabs = {
-    staff: [
-      { id: 'home', label: '🏠 Home' },
-      { id: 'produksi', label: '📝 Produksi' },
-      { id: 'histproduksi', label: '📋 Lap.Produksi' },
-      { id: 'inputnota', label: '🧾 Nota' },
-      { id: 'penjualan', label: '💰 Penjualan' },
-      { id: 'pengeluaran', label: '💸 Kas Keluar' },
-      { id: 'closing', label: '📋 Update Stok' },
-      { id: 'stoklist', label: '📦 Stok' },
-      { id: 'waste', label: '🗑️ Waste' },
-      { id: 'historybelanja', label: '🛒 Belanja' },
-      { id: 'resep', label: '📖 Resep' },
-    ],
-    owner: [
-      { id: 'home', label: '🏠 Home' },
-      { id: 'dashboard', label: '👑 Dashboard' },
-      { id: 'rekap', label: '📅 Rekap Harian' },
-      { id: 'resep', label: '📖 Resep' },
-      { id: 'upload', label: '📤 Master' },
-      { id: 'stoklist', label: '📦 Stok' },
-      { id: 'auditlog', label: '📜 Audit' },
-      { id: 'kelolauser', label: '👥 User' },
-    ],
+  // Semua menu: id → [label, ikon]
+  const MENU = {
+    home: ['Home', 'home'], produksi: ['Produksi', 'pot'], histproduksi: ['Lap. Produksi', 'clipboard'],
+    inputnota: ['Nota', 'receipt'], penjualan: ['Penjualan', 'wallet'], pengeluaran: ['Kas Keluar', 'cash'],
+    closing: ['Update Stok', 'clipboard'], stoklist: ['Stok', 'box'], waste: ['Waste', 'trash'],
+    historybelanja: ['Belanja', 'cart'], resep: ['Resep', 'book'], dashboard: ['Dashboard', 'chart'],
+    rekap: ['Rekap Harian', 'calendar'], upload: ['Master', 'upload'], auditlog: ['Audit', 'list'], kelolauser: ['User', 'users'],
   }
+  const allMenus = role === 'owner'
+    ? ['home', 'rekap', 'dashboard', 'stoklist', 'penjualan', 'pengeluaran', 'resep', 'upload', 'auditlog', 'kelolauser']
+    : ['home', 'closing', 'produksi', 'inputnota', ...(bisaPenjualan ? ['penjualan'] : []), 'pengeluaran', 'stoklist', 'waste', 'histproduksi', 'historybelanja', 'resep']
+  const primary = allMenus.slice(0, 4)               // 4 ikon di menu bawah + "Lainnya"
+  const more = allMenus.slice(4)
+  const go = (id) => { setView(id); setMoreOpen(false); window.scrollTo({ top: 0 }) }
+  const isMoreActive = more.includes(view)
+
+  const NavBtn = ({ id, label, icon, active, onClick }) => (
+    <button onClick={onClick} aria-label={label} style={{
+      display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '3px', padding: '7px 2px', borderRadius: '12px', border: 'none',
+      background: active ? C.greenBg : 'transparent', color: active ? '#8F4409' : C.text3,
+      font: 'inherit', fontSize: '10.5px', fontWeight: active ? 700 : 600, cursor: 'pointer', minHeight: '54px',
+    }}>
+      <Icon name={icon} size={24} strokeWidth={active ? 2.3 : 2} />
+      <span style={{ whiteSpace: 'nowrap' }}>{label}</span>
+    </button>
+  )
 
   return (
     <div style={{ width: '100%', minHeight: '100vh' }}>
-      <div style={{ padding: '14px 20px', background: C.text, color: C.panel, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+      {/* Header kuning sunset */}
+      <div style={{ padding: '14px 20px', background: C.sun, color: C.text, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
         <div>
-          <div style={{ fontSize: '15px', fontWeight: 600 }}>☕ Piccolo Corner</div>
-          <div style={{ fontSize: '11px', opacity: 0.7 }}>
+          <div style={{ fontSize: '18px', fontWeight: 800, letterSpacing: '-0.3px' }}>Piccolo Corner</div>
+          <div style={{ fontSize: '12px', fontWeight: 600, color: C.sunDark }}>
             {userName || (role === 'owner' ? 'Owner' : 'Staff')} · {role === 'owner' ? 'Owner' : 'Staff'} · {formatTanggalID(new Date())}
           </div>
         </div>
-        <div style={{ display: 'flex', gap: '6px' }}>
-          <button onClick={() => { handleLogout() }} style={{ ...S.btn, background: 'transparent', color: C.panel, border: '1px solid rgba(255,255,255,0.25)', padding: '6px 12px', fontSize: '11px' }}>
-            Ganti User
-          </button>
-        </div>
+        <button onClick={() => { handleLogout() }} aria-label="Ganti user" style={{
+          ...S.btn, background: 'rgba(43,29,18,0.08)', color: C.text, border: '1px solid rgba(43,29,18,0.25)', padding: '7px 10px', fontSize: '11px',
+          display: 'flex', alignItems: 'center', gap: '6px',
+        }}>
+          <Icon name="logout" size={16} /> Ganti
+        </button>
       </div>
 
       {isLocked && (
         <div style={{ background: C.redBg, padding: '10px 20px', borderBottom: `1px solid ${C.redBorder}` }}>
-          <div style={{ fontSize: '12px', color: C.red, fontWeight: 500 }}>🔒 App terkunci — closing terlewat {daysSinceClosing} hari</div>
+          <div style={{ fontSize: '12px', color: C.red, fontWeight: 600 }}>🔒 App terkunci — closing terlewat {daysSinceClosing} hari</div>
           <div style={{ fontSize: '11px', color: C.red }}>Hubungi owner atau lakukan closing untuk membuka akses</div>
         </div>
       )}
 
-      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px', padding: '10px 12px', background: C.panel2, borderBottom: `1px solid ${C.border}` }}>
-        {tabs[role].filter(t => t.id !== 'penjualan' || props.bisaPenjualan).map(t => (
-          <button key={t.id} onClick={() => setView(t.id)} style={{
-            padding: '7px 12px', fontSize: '11px', border: 'none',
-            background: view === t.id ? C.panel : 'transparent',
-            color: C.text2, borderRadius: '6px', cursor: 'pointer',
-            fontWeight: view === t.id ? 600 : 400,
-            boxShadow: view === t.id ? '0 1px 3px rgba(0,0,0,0.12)' : 'none',
-            whiteSpace: 'nowrap',
-          }}>{t.label}</button>
-        ))}
-      </div>
-
-      <div style={{ padding: '18px 20px 32px' }}>
+      {/* Isi halaman; ruang bawah untuk menu */}
+      <div style={{ padding: '18px 18px 104px' }}>
         {view === 'home' && <HomeView {...props} />}
         {view === 'produksi' && <ProduksiView {...props} />}
         {view === 'histproduksi' && <HistoryProduksiView {...props} />}
@@ -700,13 +692,43 @@ function AppShell(props) {
             : <TabSkeleton label="audit" />
         )}
       </div>
+
+      {/* Lembar "Lainnya" */}
+      {moreOpen && (
+        <div onClick={() => setMoreOpen(false)} style={{ position: 'fixed', inset: 0, background: 'rgba(43,29,18,0.45)', zIndex: 900, display: 'flex', alignItems: 'flex-end', justifyContent: 'center' }}>
+          <div onClick={e => e.stopPropagation()} style={{ background: C.panel, width: '100%', maxWidth: '520px', borderRadius: '18px 18px 0 0', padding: '16px 16px calc(96px + env(safe-area-inset-bottom, 0px))' }}>
+            <div style={{ fontSize: '14px', fontWeight: 800, marginBottom: '12px' }}>Menu lainnya</div>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0, 1fr))', gap: '8px' }}>
+              {more.map(id => (
+                <button key={id} onClick={() => go(id)} style={{
+                  display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '6px', padding: '12px 6px', borderRadius: '14px',
+                  border: `1.5px solid ${view === id ? C.greenBorder : C.border}`, background: view === id ? C.greenBg : C.bg,
+                  color: view === id ? '#8F4409' : C.text2, font: 'inherit', fontSize: '12px', fontWeight: 700, cursor: 'pointer', minHeight: '72px',
+                }}>
+                  <Icon name={MENU[id][1]} size={24} />{MENU[id][0]}
+                </button>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Menu bawah */}
+      <nav aria-label="Menu utama" style={{
+        position: 'fixed', bottom: 0, left: '50%', transform: 'translateX(-50%)', width: '100%', maxWidth: '520px', zIndex: 950,
+        display: 'grid', gridTemplateColumns: 'repeat(5, minmax(0, 1fr))', gap: '2px',
+        padding: '6px 6px calc(10px + env(safe-area-inset-bottom, 0px))', background: C.panel, borderTop: `1px solid ${C.border}`,
+        boxShadow: '0 -4px 16px rgba(43,29,18,0.08)',
+      }}>
+        {primary.map(id => (
+          <NavBtn key={id} id={id} label={MENU[id][0]} icon={MENU[id][1]} active={view === id && !moreOpen} onClick={() => go(id)} />
+        ))}
+        <NavBtn id="more" label="Lainnya" icon="more" active={moreOpen || isMoreActive} onClick={() => setMoreOpen(o => !o)} />
+      </nav>
     </div>
   )
 }
 
-// =====================================================
-// HOME VIEW
-// =====================================================
 function HomeView(props) {
   const { role, bahanBaku, produksi, belanja, closing, daysSinceClosing, setView, userName } = props
 
@@ -968,55 +990,25 @@ function StaffHome({ bahanBaku, produksi, belanja, closing, penjualan, daysSince
       )}
 
       {/* Aksi cepat */}
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px', marginBottom: '14px' }}>
-        <button onClick={() => setView('closing')} style={{
-          padding: '13px 10px', fontSize: '12px', fontWeight: 600, textAlign: 'center',
-          background: C.blueBg, color: C.blue, border: `1.5px solid ${C.blueBorder}`,
-          borderRadius: '10px', cursor: 'pointer', lineHeight: 1.3,
-        }}>
-          <div style={{ fontSize: '18px', marginBottom: '3px' }}>📋</div>
-          Lanjut update stok
-        </button>
-        <button onClick={() => setView('produksi')} style={{
-          padding: '13px 10px', fontSize: '12px', fontWeight: 600, textAlign: 'center',
-          background: C.greenBg, color: C.green, border: `1.5px solid ${C.greenBorder}`,
-          borderRadius: '10px', cursor: 'pointer', lineHeight: 1.3,
-        }}>
-          <div style={{ fontSize: '18px', marginBottom: '3px' }}>📝</div>
-          Input produksi
-        </button>
-        <button onClick={() => setView('inputnota')} style={{
-          padding: '13px 10px', fontSize: '12px', fontWeight: 600, textAlign: 'center',
-          background: C.yellowBg, color: C.yellow, border: `1.5px solid ${C.yellowBorder}`,
-          borderRadius: '10px', cursor: 'pointer', lineHeight: 1.3,
-        }}>
-          <div style={{ fontSize: '18px', marginBottom: '3px' }}>🧾</div>
-          Input nota belanja
-        </button>
-        <button onClick={() => setView('waste')} style={{
-          padding: '13px 10px', fontSize: '12px', fontWeight: 600, textAlign: 'center',
-          background: C.redBg, color: C.red, border: `1.5px solid ${C.redBorder}`,
-          borderRadius: '10px', cursor: 'pointer', lineHeight: 1.3,
-        }}>
-          <div style={{ fontSize: '18px', marginBottom: '3px' }}>🗑️</div>
-          Catat waste
-        </button>
-        {bisaPenjualan && <button onClick={() => setView('penjualan')} style={{
-          padding: '13px 10px', fontSize: '12px', fontWeight: 600, textAlign: 'center',
-          background: C.greenLightBg, color: C.greenLight, border: `1.5px solid ${C.greenLightBorder}`,
-          borderRadius: '10px', cursor: 'pointer', lineHeight: 1.3,
-        }}>
-          <div style={{ fontSize: '18px', marginBottom: '3px' }}>💰</div>
-          Laporan penjualan
-        </button>}
-        <button onClick={() => setView('pengeluaran')} style={{
-          padding: '13px 10px', fontSize: '12px', fontWeight: 600, textAlign: 'center',
-          background: C.panel2, color: C.text2, border: `1.5px solid ${C.border}`,
-          borderRadius: '10px', cursor: 'pointer', lineHeight: 1.3,
-        }}>
-          <div style={{ fontSize: '18px', marginBottom: '3px' }}>💸</div>
-          Kas kasir keluar
-        </button>
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px', marginBottom: '14px' }}>
+        {[
+          ['closing', 'clipboard', isOpname ? 'Stok opname' : 'Lanjut update stok', true],
+          ['produksi', 'pot', 'Input produksi', false],
+          ['inputnota', 'receipt', 'Nota belanja', false],
+          ['waste', 'trash', 'Catat waste', false],
+          ...(bisaPenjualan ? [['penjualan', 'wallet', 'Laporan penjualan', false]] : []),
+          ['pengeluaran', 'cash', 'Kas kasir keluar', false],
+        ].map(([id, icon, label, primary]) => (
+          <button key={id} onClick={() => setView(id)} style={{
+            display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: '10px', padding: '14px', minHeight: '86px',
+            borderRadius: '16px', cursor: 'pointer', textAlign: 'left', font: 'inherit', fontSize: '14px', fontWeight: 700,
+            border: primary ? 'none' : `1.5px solid ${C.border}`,
+            background: primary ? C.greenBorder : C.panel, color: primary ? '#FFFFFF' : C.text,
+          }}>
+            <Icon name={icon} size={26} style={{ color: primary ? '#FFFFFF' : C.green }} />
+            {label}
+          </button>
+        ))}
       </div>
 
       {/* Activity feed — siapa sudah ngapain hari ini */}
@@ -1072,7 +1064,7 @@ function BigBtn({ color, icon, label, onClick }) {
       background: styles.bg, color: styles.fg, border: `1.5px solid ${styles.border}`,
       borderRadius: '10px', cursor: 'pointer', textAlign: 'center', lineHeight: 1.3,
     }}>
-      <div style={{ fontSize: '20px', marginBottom: '4px' }}>{icon}</div>
+      <Icon name={icon} size={26} style={{ color: styles.fg, marginBottom: '4px' }} />
       {label}
     </button>
   )
@@ -1193,10 +1185,10 @@ function OwnerHome(props) {
       )}
 
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px', marginTop: '14px' }}>
-        <BigBtn color="green" icon="📅" label="Rekap Harian" onClick={() => setView('rekap')} />
-        <BigBtn color="default" icon="👑" label="Dashboard Lengkap" onClick={() => setView('dashboard')} />
-        <BigBtn color="blue" icon="📤" label="Upload Master" onClick={() => setView('upload')} />
-        <BigBtn color="yellow" icon="💸" label="Kas Kasir Keluar" onClick={() => setView('pengeluaran')} />
+        <BigBtn color="green" icon="calendar" label="Rekap Harian" onClick={() => setView('rekap')} />
+        <BigBtn color="default" icon="chart" label="Dashboard Lengkap" onClick={() => setView('dashboard')} />
+        <BigBtn color="blue" icon="upload" label="Upload Master" onClick={() => setView('upload')} />
+        <BigBtn color="yellow" icon="cash" label="Kas Kasir Keluar" onClick={() => setView('pengeluaran')} />
       </div>
     </div>
   )
