@@ -37,7 +37,8 @@ export function RequestBelanjaView({ bahanBaku = [], requests = [], role, userNa
 
   const tambah = (b) => {
     if (rows.some(r => r.bahan_id === b.id)) return
-    setRows([...rows, { bahan_id: b.id, nama: b.nama, jumlah: '', satuan: b.kemasan || b.satuan_dasar || '' }])
+    const sat = b.kemasan || ({ gram: 'kg', gr: 'kg', g: 'kg', ml: 'liter' })[String(b.satuan_dasar || '').toLowerCase()] || b.satuan_dasar || ''
+    setRows([...rows, { bahan_id: b.id, nama: b.nama, jumlah: '', satuan: sat }])
     setCari('')
   }
   const ubah = (idx, f, v) => setRows(rows.map((r, i) => i === idx ? { ...r, [f]: v } : r))
