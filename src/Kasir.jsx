@@ -10,7 +10,6 @@ import { supabase, generateId, formatTanggal, formatTanggalID, formatRupiah } fr
 import { C, S, uploadFotoToStorage, SUMBER_DANA_LABEL, sumberText, KATEGORI_BIAYA } from './shared'
 
 const BELANJA_BAHAN = 'Belanja bahan (stok)'
-const KATEGORI_PENGELUARAN = [BELANJA_BAHAN, ...KATEGORI_BIAYA]
 const CARA_PERSETUJUAN = ['WA', 'Telepon', 'Lisan']
 const METODE = [
   ['tunai', '💵 Tunai'],
@@ -345,7 +344,6 @@ export function PengeluaranKasirView({ showToast, userName, setUserName, loadDat
   const [tanggal, setTanggal] = useState(formatTanggal())
   const [jumlah, setJumlah] = useState('')
   const [keperluan, setKeperluan] = useState('')
-  const [kategori, setKategori] = useState('Operasional')
   const [sumber, setSumber] = useState('kas_kasir')
   const [dibayarOleh, setDibayarOleh] = useState('')
   const [adaNota, setAdaNota] = useState(false)
@@ -365,7 +363,8 @@ export function PengeluaranKasirView({ showToast, userName, setUserName, loadDat
       supabase.from('belanja').select('id, tanggal, total_harga, sumber_dana, dibayar_oleh, yang_belanja, foto_nota, foto_tambahan, items, status_baca, catatan, created_at').order('created_at', { ascending: false }).limit(100),
     ])
     // Belanja bahan juga uang keluar laci, tampilkan di riwayat yang sama supaya laporan kas keluar lengkap
-    const belanjaRows = (bl.data || []).map(b => ({
+    const dipindah = new Set((pk.data || []).map(p => p.dipindah_ke_belanja).filter(Boolean))
+    const belanjaRows = (bl.data || []).filter(b => !dipindah.has(b.id)).map(b => ({
       id: 'b-' + b.id, _belanja: true, tanggal: b.tanggal, jumlah: b.total_harga, kategori: BELANJA_BAHAN,
       keperluan: b.status_baca === 'menunggu' ? 'Belanja bahan — nota menunggu dibaca' : 'Belanja bahan — ' + ((b.items || []).map(i => i.nama).join(', ').slice(0, 60) || 'tanpa rincian'),
       sumber_dana: b.sumber_dana, dibayar_oleh: b.dibayar_oleh, yang_input: b.yang_belanja, ada_nota: !!b.foto_nota, foto: b.foto_nota, foto_tambahan: b.foto_tambahan, catatan: b.catatan, created_at: b.created_at,
@@ -378,7 +377,7 @@ export function PengeluaranKasirView({ showToast, userName, setUserName, loadDat
       .then(({ data }) => { const n = (data || []).map(d => d.nama); setOwners(n); if (n[0]) setDisetujui(n[0]) })
   }, [])
 
-  const reset = () => { setJumlah(''); setKeperluan(''); setKategori('Operasional'); setAdaNota(false); setFotos([]); setCatatan(''); setDibayarOleh('') }
+  const reset = () => { setJumlah(''); setKeperluan(''); setAdaNota(false); setFotos([]); setCatatan(''); setDibayarOleh('') }
 
   const handleSave = async () => {
     if (!num(jumlah)) { showToast('❌ Isi jumlah'); return }
@@ -386,33 +385,16 @@ export function PengeluaranKasirView({ showToast, userName, setUserName, loadDat
     if (!disetujui.trim()) { showToast('❌ Isi siapa yang menyetujui'); return }
     if (!yangInput.trim()) { showToast('❌ Isi nama yang input'); return }
     if (adaNota && fotos.length === 0) { showToast('❌ Kamu centang "ada nota", fotonya mana?'); return }
-    if (kategori === BELANJA_BAHAN && fotos.length === 0) { showToast('❌ Belanja bahan wajib ada foto nota, supaya barangnya bisa dibaca'); return }
     if (sumber === 'talangan' && !dibayarOleh.trim()) { showToast('❌ Isi siapa yang menalangi'); return }
     setSaving(true)
     setUserName(yangInput)
     try {
       const urls = []
-      for (const f of fotos) urls.push(await uploadFotoToStorage(f.file, kategori === BELANJA_BAHAN ? 'belanja' : 'pengeluaran', { tanggal }))
+      for (const f of fotos) urls.push(await uploadFotoToStorage(f.file, 'pengeluaran', { tanggal }))
       const id = generateId()
-      if (kategori === BELANJA_BAHAN) {
-        // Dicatat sebagai nota belanja: barang & stok diisi Claude pada tugas pagi
-        const { error: eB } = await supabase.from('belanja').insert({
-          id, tanggal, jalur: num(jumlah) >= 100000 ? 'normal' : 'kecil', sumber_dana: sumber,
-          dibayar_oleh: sumber === 'talangan' ? dibayarOleh.trim() : null, status_ganti: sumber === 'talangan' ? 'belum' : null,
-          total_harga: num(jumlah), yang_belanja: yangInput, created_by: yangInput, items: [], status_baca: 'menunggu',
-          foto_nota: urls[0] || null, foto_tambahan: urls.slice(1),
-          catatan: [keperluan.trim(), catatan.trim(), `acc ${disetujui.trim()} via ${cara}`].filter(Boolean).join(' · '),
-        })
-        if (eB) throw eB
-        if (sumber === 'petty_cash') {
-          await supabase.from('petty_cash').insert({ id: generateId(), tanggal, jenis: 'pengeluaran', jumlah: -num(jumlah), saldo_setelah: 0, pemegang: 'staff', belanja_id: id, yang_input: yangInput })
-        }
-        showToast('✅ Tercatat. Barang di nota dibaca Claude pada tugas pagi, stok ter-update setelahnya.')
-        reset(); loadList(); setSaving(false)
-        return
-      }
       const { error } = await supabase.from('pengeluaran_kasir').insert({
-        id, tanggal, jumlah: num(jumlah), keperluan: keperluan.trim(), kategori, sumber_dana: sumber,
+        id, tanggal, jumlah: num(jumlah), keperluan: keperluan.trim(), kategori: null, sumber_dana: sumber,
+        status_baca: urls.length ? 'menunggu' : 'selesai',   // ada foto → kategori & isi nota dibaca Claude pada tugas pagi
         dibayar_oleh: sumber === 'talangan' ? dibayarOleh.trim() : null, status_ganti: sumber === 'talangan' ? 'belum' : null,
         ada_nota: adaNota, disetujui_oleh: disetujui.trim(), cara_persetujuan: cara,
         foto: urls[0] || null, foto_tambahan: urls.slice(1), catatan: catatan.trim() || null, yang_input: yangInput,
@@ -437,12 +419,12 @@ export function PengeluaranKasirView({ showToast, userName, setUserName, loadDat
   const listBulan = visible.filter(p => bulanIni(p.tanggal) === bulan)
   const totalBulan = listBulan.reduce((s, p) => s + num(p.jumlah), 0)
   const perKategori = {}
-  listBulan.forEach(p => { perKategori[p.kategori] = (perKategori[p.kategori] || 0) + num(p.jumlah) })
+  listBulan.forEach(p => { const k = p.kategori || 'Belum dikategorikan'; perKategori[k] = (perKategori[k] || 0) + num(p.jumlah) })
 
   return (
     <div>
       <h2 style={{ fontSize: '17px', fontWeight: 600, marginBottom: '2px' }}>💸 Pengeluaran Kas Kasir</h2>
-      <p style={{ fontSize: '12px', color: C.text3, marginBottom: '12px' }}>Semua uang yang keluar dari laci kasir / petty cash: belanja bahan, parkir, galon, ongkir, konsumsi staff. Pilih kategori "Belanja bahan (stok)" kalau untuk bahan, cukup total + foto nota.</p>
+      <p style={{ fontSize: '12px', color: C.text3, marginBottom: '12px' }}>Semua uang yang keluar dari laci kasir / petty cash: belanja bahan, parkir, galon, ongkir, konsumsi staff. Cukup isi jumlah, untuk apa, dan foto notanya. Kategori dan isi nota diurus Claude saat input ke Accurate.</p>
 
       <Tabs value={tab} onChange={setTab} items={[['catat', '📝 Catat'], ['riwayat', `📅 Riwayat (${listBulan.length})`]]} />
 
@@ -455,19 +437,9 @@ export function PengeluaranKasirView({ showToast, userName, setUserName, loadDat
             <RupiahInput value={jumlah} onChange={setJumlah} big autoFocus />
           </FormRow>
           <FormRow label="Untuk apa? *">
-            <input value={keperluan} onChange={e => setKeperluan(e.target.value)} placeholder={kategori === BELANJA_BAHAN ? 'misal: belanja pasar, ayam & sayur di Lotte' : 'misal: parkir supplier, galon, ongkir Grab'} style={S.input} />
+            <input value={keperluan} onChange={e => setKeperluan(e.target.value)} placeholder="misal: belanja Lotte, parkir supplier, galon, ongkir Grab" style={S.input} />
           </FormRow>
-          {kategori === BELANJA_BAHAN && (
-            <div style={{ background: C.blueBg, color: C.blue, padding: '9px 12px', borderRadius: '8px', fontSize: '11.5px', lineHeight: 1.5, marginBottom: '10px' }}>
-              🧾 Cukup isi total dan foto notanya. Barang di nota dibaca Claude pada tugas pagi dan stok ter-update otomatis. Kalau mau isi barangnya sendiri sekarang, pakai menu Nota.
-            </div>
-          )}
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' }}>
-            <FormRow label="Kategori">
-              <select value={kategori} onChange={e => setKategori(e.target.value)} style={S.input}>
-                {KATEGORI_PENGELUARAN.map(k => <option key={k} value={k}>{k}</option>)}
-              </select>
-            </FormRow>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: '8px' }}>
             <FormRow label="Sumber uang">
               <select value={sumber} onChange={e => setSumber(e.target.value)} style={S.input}>
                 <option value="kas_kasir">🏪 Kas kasir</option>
@@ -510,7 +482,7 @@ export function PengeluaranKasirView({ showToast, userName, setUserName, loadDat
             <input type="checkbox" id="ada-nota" checked={adaNota} onChange={e => setAdaNota(e.target.checked)} />
             <label htmlFor="ada-nota" style={{ fontSize: '12px', cursor: 'pointer' }}>Ada nota / struk fisik</label>
           </div>
-          <FotoMultiInput label={(adaNota || kategori === BELANJA_BAHAN) ? 'Foto nota * (boleh beberapa)' : 'Foto bukti (opsional, misal nota atau screenshot WA persetujuan)'} fotos={fotos} showToast={showToast}
+          <FotoMultiInput label={adaNota ? 'Foto nota * (boleh beberapa)' : 'Foto bukti (opsional, misal nota atau screenshot WA persetujuan)'} fotos={fotos} showToast={showToast}
             onAdd={list => setFotos(prev => [...prev, ...list])} onRemove={i => setFotos(prev => prev.filter((_, k) => k !== i))} />
 
           <FormRow label="Catatan (opsional)">
@@ -545,7 +517,7 @@ export function PengeluaranKasirView({ showToast, userName, setUserName, loadDat
                 <div style={{ flex: 1 }}>
                   <div style={{ fontSize: '13px', fontWeight: 600 }}>{p.keperluan}</div>
                   <div style={{ fontSize: '11px', color: C.text3, marginTop: '2px' }}>
-                    {formatTanggalID(p.tanggal)} · {p.kategori} · {sumberText(p)}
+                    {formatTanggalID(p.tanggal)} · {p.kategori || (p.status_baca === 'menunggu' ? 'kategori diisi Claude (tugas pagi)' : 'belum dikategorikan')} · {sumberText(p)}{p.dipindah_ke_belanja ? ' · 🧾 jadi nota belanja' : ''}
                   </div>
                   <div style={{ fontSize: '11px', color: C.text3, marginTop: '2px' }}>
                     {p._belanja ? <>🧾 nota belanja · input {p.yang_input}{p.catatan ? ` · ${p.catatan}` : ''}</> : <>✅ {p.disetujui_oleh} via {p.cara_persetujuan} · input {p.yang_input}{p.ada_nota ? ' · 🧾 ada nota' : ' · tanpa nota'}</>}
@@ -591,7 +563,7 @@ export function RekapHarianView({ bahanBaku, showToast, setView }) {
         supabase.from('waste').select('*').eq('tanggal', tgl).order('created_at'),
         supabase.from('produksi').select('id, menu_nama, hasil_pcs, total_cogs, yang_masak, status').eq('tanggal', tgl).order('created_at'),
       ])
-      setData({ penjualan: pj.data || null, belanja: bl.data || [], pengeluaran: pk.data || [], waste: ws.data || [], produksi: pr.data || [] })
+      setData({ penjualan: pj.data || null, belanja: bl.data || [], pengeluaran: (pk.data || []).filter(p => !p.dipindah_ke_belanja), waste: ws.data || [], produksi: pr.data || [] })
     } catch (e) { showToast('❌ ' + e.message) }
     setLoading(false)
   }
@@ -636,7 +608,7 @@ export function RekapHarianView({ bahanBaku, showToast, setView }) {
     biayaRows.forEach(r => L.push(`  [bukan stok] ${r.keterangan} — ${r.kategori} — ${formatRupiah(r.harga)} — ${r.sumber} (nota ${r.yang_belanja})`))
     L.push('')
     L.push(`PENGELUARAN KASIR (${pengeluaran.length}, ${formatRupiah(totalPengeluaran)})`)
-    pengeluaran.forEach(p => L.push(`  ${p.keperluan} — ${formatRupiah(p.jumlah)} — ${p.kategori} — ${sumberText(p)} — acc ${p.disetujui_oleh} (${p.cara_persetujuan})${p.ada_nota ? ' — ada nota' : ' — tanpa nota'}`))
+    pengeluaran.forEach(p => L.push(`  ${p.keperluan} — ${formatRupiah(p.jumlah)} — ${p.kategori || 'belum dikategorikan'} — ${sumberText(p)} — acc ${p.disetujui_oleh} (${p.cara_persetujuan})${p.ada_nota ? ' — ada nota' : ' — tanpa nota'}`))
     L.push('')
     L.push(`WASTE (${waste.length}, nilai ± ${formatRupiah(nilaiWaste)})`)
     waste.forEach(w => { const b = bahanById[w.bahan_id]; L.push(`  ${b?.kode_accurate || '[tanpa kode]'} ${b?.nama || w.bahan_id} — ${w.jumlah} ${b?.satuan_dasar || ''} — ${w.alasan}`) })
@@ -777,7 +749,7 @@ export function RekapHarianView({ bahanBaku, showToast, setView }) {
           <div key={p.id} style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px', padding: '4px 0', borderTop: `1px solid ${C.panel2}` }}>
             <span style={{ flex: 1 }}>
               {p.keperluan}
-              <div style={{ fontSize: '10px', color: C.text3 }}>{p.kategori} · {sumberText(p)} · acc {p.disetujui_oleh} ({p.cara_persetujuan}){p.ada_nota ? ' · 🧾' : ''}</div>
+              <div style={{ fontSize: '10px', color: C.text3 }}>{p.kategori || 'belum dikategorikan'} · {sumberText(p)} · acc {p.disetujui_oleh} ({p.cara_persetujuan}){p.ada_nota ? ' · 🧾' : ''}</div>
             </span>
             <span style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
               <strong>{formatRupiah(p.jumlah)}</strong>
