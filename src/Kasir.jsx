@@ -48,6 +48,40 @@ function RupiahInput({ value, onChange, placeholder = '0', big = false, autoFocu
   )
 }
 
+export const semuaFoto = (utama, tambahan) => [utama, ...(Array.isArray(tambahan) ? tambahan : [])].filter(Boolean)
+
+// Beberapa foto sekaligus (nota lebih dari satu lembar / beberapa nota)
+function FotoMultiInput({ label, fotos, onAdd, onRemove, maxMB = 6, showToast }) {
+  const handle = (e) => {
+    const files = Array.from(e.target.files || [])
+    e.target.value = ''
+    const oke = files.filter(f => { if (f.size > maxMB * 1024 * 1024) { showToast(`❌ ${f.name}: foto max ${maxMB}MB`); return false } return true })
+    if (!oke.length) return
+    Promise.all(oke.map(f => new Promise(res => { const r = new FileReader(); r.onload = ev => res({ file: f, b64: ev.target.result }); r.readAsDataURL(f) })))
+      .then(list => onAdd(list))
+  }
+  return (
+    <div style={{ marginBottom: '10px' }}>
+      <label style={S.label}>{label}</label>
+      {fotos.length > 0 && (
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '6px', marginBottom: '6px' }}>
+          {fotos.map((f, i) => (
+            <div key={i} style={{ position: 'relative' }}>
+              <img src={f.b64} alt="" style={{ width: '100%', aspectRatio: '1', objectFit: 'cover', borderRadius: '8px', border: `1px solid ${C.border}` }} />
+              <button onClick={() => onRemove(i)} aria-label="Hapus foto" style={{ position: 'absolute', top: '4px', right: '4px', width: '22px', height: '22px', borderRadius: '11px', border: 'none', background: 'rgba(0,0,0,0.6)', color: '#fff', fontSize: '12px', cursor: 'pointer' }}>✕</button>
+              <div style={{ position: 'absolute', left: '4px', bottom: '4px', fontSize: '10px', background: 'rgba(0,0,0,0.55)', color: '#fff', padding: '1px 5px', borderRadius: '4px' }}>{i + 1}</div>
+            </div>
+          ))}
+        </div>
+      )}
+      <label style={{ display: 'block', border: `1.5px dashed ${C.border2}`, borderRadius: '8px', padding: fotos.length ? '10px' : '16px', textAlign: 'center', cursor: 'pointer', background: C.panel, fontSize: '12px', color: C.text2 }}>
+        {fotos.length ? '➕ Tambah foto lagi' : '📷 Tap untuk foto / pilih gambar (boleh lebih dari satu)'}
+        <input type="file" accept="image/*" multiple onChange={handle} style={{ display: 'none' }} />
+      </label>
+    </div>
+  )
+}
+
 function FotoInput({ label, foto, onFile, onClear, maxMB = 4, showToast }) {
   const handle = (e) => {
     const file = e.target.files?.[0]
@@ -313,8 +347,7 @@ export function PengeluaranKasirView({ showToast, userName, setUserName, loadDat
   const [sumber, setSumber] = useState('kas_kasir')
   const [dibayarOleh, setDibayarOleh] = useState('')
   const [adaNota, setAdaNota] = useState(false)
-  const [foto, setFoto] = useState('')
-  const [fotoFile, setFotoFile] = useState(null)
+  const [fotos, setFotos] = useState([])   // [{ file, b64 }]
   const [disetujui, setDisetujui] = useState('')
   const [cara, setCara] = useState('WA')
   const [catatan, setCatatan] = useState('')
@@ -334,26 +367,26 @@ export function PengeluaranKasirView({ showToast, userName, setUserName, loadDat
       .then(({ data }) => { const n = (data || []).map(d => d.nama); setOwners(n); if (n[0]) setDisetujui(n[0]) })
   }, [])
 
-  const reset = () => { setJumlah(''); setKeperluan(''); setKategori('Operasional'); setAdaNota(false); setFoto(''); setFotoFile(null); setCatatan(''); setDibayarOleh('') }
+  const reset = () => { setJumlah(''); setKeperluan(''); setKategori('Operasional'); setAdaNota(false); setFotos([]); setCatatan(''); setDibayarOleh('') }
 
   const handleSave = async () => {
     if (!num(jumlah)) { showToast('❌ Isi jumlah'); return }
     if (!keperluan.trim()) { showToast('❌ Isi untuk apa uangnya'); return }
     if (!disetujui.trim()) { showToast('❌ Isi siapa yang menyetujui'); return }
     if (!yangInput.trim()) { showToast('❌ Isi nama yang input'); return }
-    if (adaNota && !foto) { showToast('❌ Kamu centang "ada nota", fotonya mana?'); return }
+    if (adaNota && fotos.length === 0) { showToast('❌ Kamu centang "ada nota", fotonya mana?'); return }
     if (sumber === 'talangan' && !dibayarOleh.trim()) { showToast('❌ Isi siapa yang menalangi'); return }
     setSaving(true)
     setUserName(yangInput)
     try {
-      let fotoUrl = ''
-      if (fotoFile) fotoUrl = await uploadFotoToStorage(fotoFile, 'pengeluaran')
+      const urls = []
+      for (const f of fotos) urls.push(await uploadFotoToStorage(f.file, 'pengeluaran', { tanggal }))
       const id = generateId()
       const { error } = await supabase.from('pengeluaran_kasir').insert({
         id, tanggal, jumlah: num(jumlah), keperluan: keperluan.trim(), kategori, sumber_dana: sumber,
         dibayar_oleh: sumber === 'talangan' ? dibayarOleh.trim() : null, status_ganti: sumber === 'talangan' ? 'belum' : null,
         ada_nota: adaNota, disetujui_oleh: disetujui.trim(), cara_persetujuan: cara,
-        foto: fotoUrl || null, catatan: catatan.trim() || null, yang_input: yangInput,
+        foto: urls[0] || null, foto_tambahan: urls.slice(1), catatan: catatan.trim() || null, yang_input: yangInput,
       })
       if (error) throw error
       if (sumber === 'petty_cash') {
@@ -441,8 +474,8 @@ export function PengeluaranKasirView({ showToast, userName, setUserName, loadDat
             <input type="checkbox" id="ada-nota" checked={adaNota} onChange={e => setAdaNota(e.target.checked)} />
             <label htmlFor="ada-nota" style={{ fontSize: '12px', cursor: 'pointer' }}>Ada nota / struk fisik</label>
           </div>
-          <FotoInput label={adaNota ? 'Foto nota *' : 'Foto bukti (opsional, misal screenshot WA persetujuan)'} foto={foto} showToast={showToast}
-            onFile={(file, b64) => { setFotoFile(file); setFoto(b64) }} onClear={() => { setFotoFile(null); setFoto('') }} />
+          <FotoMultiInput label={adaNota ? 'Foto nota * (boleh beberapa)' : 'Foto bukti (opsional, misal nota atau screenshot WA persetujuan)'} fotos={fotos} showToast={showToast}
+            onAdd={list => setFotos(prev => [...prev, ...list])} onRemove={i => setFotos(prev => prev.filter((_, k) => k !== i))} />
 
           <FormRow label="Catatan (opsional)">
             <input value={catatan} onChange={e => setCatatan(e.target.value)} style={S.input} />
@@ -484,7 +517,7 @@ export function PengeluaranKasirView({ showToast, userName, setUserName, loadDat
                 </div>
                 <div style={{ textAlign: 'right' }}>
                   <div style={{ fontSize: '14px', fontWeight: 700, color: C.red }}>{formatRupiah(p.jumlah)}</div>
-                  {p.foto && <button onClick={() => setFotoModal(p.foto)} style={{ ...S.btn, ...S.btnSecondary, padding: '3px 8px', fontSize: '10px', marginTop: '4px' }}>📷 Foto</button>}
+                  {semuaFoto(p.foto, p.foto_tambahan).map((u, i, arr) => <button key={u} onClick={() => setFotoModal(u)} style={{ ...S.btn, ...S.btnSecondary, padding: '3px 8px', fontSize: '10px', marginTop: '4px', marginLeft: i ? '4px' : 0 }}>📷{arr.length > 1 ? ` ${i + 1}` : ' Foto'}</button>)}
                 </div>
               </div>
             </div>
@@ -679,7 +712,7 @@ export function RekapHarianView({ bahanBaku, showToast, setView }) {
               <span>{b.yang_belanja} · {b.jalur} · {sumberText(b)}</span>
               <span style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
                 <strong style={{ color: C.text }}>{formatRupiah(b.total_harga)}</strong>
-                {b.foto_nota && <button onClick={() => setFotoModal(b.foto_nota)} style={{ ...S.btn, ...S.btnSecondary, padding: '2px 8px', fontSize: '10px' }}>📷</button>}
+                {semuaFoto(b.foto_nota, b.foto_tambahan).map((u, i, arr) => <button key={u} onClick={() => setFotoModal(u)} style={{ ...S.btn, ...S.btnSecondary, padding: '2px 8px', fontSize: '10px' }}>📷{arr.length > 1 ? i + 1 : ''}</button>)}
               </span>
             </div>
             {(b.items || []).map((it, i) => {
@@ -707,7 +740,7 @@ export function RekapHarianView({ bahanBaku, showToast, setView }) {
             </span>
             <span style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
               <strong>{formatRupiah(p.jumlah)}</strong>
-              {p.foto && <button onClick={() => setFotoModal(p.foto)} style={{ ...S.btn, ...S.btnSecondary, padding: '2px 8px', fontSize: '10px' }}>📷</button>}
+              {semuaFoto(p.foto, p.foto_tambahan).map((u, i, arr) => <button key={u} onClick={() => setFotoModal(u)} style={{ ...S.btn, ...S.btnSecondary, padding: '2px 8px', fontSize: '10px' }}>📷{arr.length > 1 ? i + 1 : ''}</button>)}
             </span>
           </div>
         ))}

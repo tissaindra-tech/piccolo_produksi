@@ -4,6 +4,7 @@ import * as XLSX from 'xlsx'
 import { C, S, Icon, uploadFotoToStorage, compressImage, salinKeDrive, setDriveContext } from './shared'
 import { kirimKeDrive } from './nota'
 import { RequestBelanjaView } from './Request'
+import { semuaFoto } from './Kasir'
 import { PenjualanView, PengeluaranKasirView, RekapHarianView, TalanganCard } from './Kasir'
 
 // =====================================================
@@ -2058,6 +2059,7 @@ function InputNotaView({ bahanBaku, showToast, loadData, logAudit, setView, user
   const [isiBarang, setIsiBarang] = useState(false)  // mode foto: staff memilih mengisi barang sendiri
   const driveUrl = settings?.drive?.url || ''
   const [requestId, setRequestId] = useState(null)   // request belanja yang sedang dibelanjakan
+  const [fotoExtra, setFotoExtra] = useState([])     // foto nota lembar ke-2 dst: [{ file, b64, text }]
   const reqSiap = requests.filter(r => r.status === 'disetujui')
   const pakaiRequest = (r) => {
     if (requestId === r.id) { setRequestId(null); return }
@@ -2149,20 +2151,33 @@ function InputNotaView({ bahanBaku, showToast, loadData, logAudit, setView, user
 
   const totalHarga = items.reduce((s, i) => s + (Number(i.harga) || 0), 0)
 
+  const bacaFile = (f) => new Promise((res, rej) => { const r = new FileReader(); r.onload = ev => res(ev.target.result); r.onerror = rej; r.readAsDataURL(f) })
+
   const handleFoto = async (e) => {
-    const file = e.target.files?.[0]
-    if (!file) return
-    if (file.size > 15 * 1024 * 1024) { showToast('❌ Foto terlalu besar (max 15MB)'); return }
-    let kecil = file
-    try { kecil = await compressImage(file, 1600, 0.85) } catch { /* pakai file asli */ }
-    setFotoFile(kecil)
-    const reader = new FileReader()
-    reader.onload = (ev) => {
-      const b64 = ev.target.result
-      setFoto(b64)
-      if (mode === 'foto') scanNotaWithAI(b64)   // langsung dibaca setelah foto dipilih
+    const files = Array.from(e.target.files || [])
+    e.target.value = ''
+    if (!files.length) return
+    let adaUtama = !!(foto || fotoFile)
+    let nExtra = fotoExtra.length
+    for (const file of files) {
+      if (file.size > 15 * 1024 * 1024) { showToast(`❌ ${file.name}: foto terlalu besar (max 15MB)`); continue }
+      let kecil = file
+      try { kecil = await compressImage(file, 1600, 0.85) } catch { /* pakai file asli */ }
+      const b64 = await bacaFile(kecil)
+      if (!adaUtama) {
+        // foto pertama: jadi foto utama, langsung disalin ke Drive & dibaca
+        adaUtama = true
+        setFotoFile(kecil); setFoto(b64)
+        if (mode === 'foto') scanNotaWithAI(b64)
+      } else {
+        // lembar berikutnya: simpan + salin ke Drive (teks OCR ikut disimpan)
+        const idx = nExtra++
+        setFotoExtra(prev => [...prev, { file: kecil, b64, text: '' }])
+        if (driveUrl) salinKeDrive(b64, 'belanja', tanggal, true).then(r => {
+          if (r?.ok && r.text) setFotoExtra(prev => prev.map((x, i) => i === idx ? { ...x, text: r.text } : x))
+        }).catch(() => {})
+      }
     }
-    reader.readAsDataURL(kecil)
   }
 
   const handleSubmit = async () => {
@@ -2195,6 +2210,9 @@ function InputNotaView({ bahanBaku, showToast, loadData, logAudit, setView, user
       if (fotoFile) {
         fotoUrl = await uploadFotoToStorage(fotoFile, 'belanja', { skipDrive: !!driveInfo, tanggal })
       }
+      const fotoTambahan = []
+      for (const f of fotoExtra) fotoTambahan.push(await uploadFotoToStorage(f.file, 'belanja', { skipDrive: !!driveUrl, tanggal }))
+      const ocrGabung = [driveInfo?.text || '', ...fotoExtra.map(f => f.text || '')].filter(Boolean).join('\n\n--- lembar berikutnya ---\n\n') || null
       const { error: belanjaErr } = await supabase.from('belanja').insert({
         id: newId, tanggal, jalur, sumber_dana: sumberDana,
         dibayar_oleh: sumberDana === 'talangan' ? dibayarOleh.trim() : null,
@@ -2202,7 +2220,7 @@ function InputNotaView({ bahanBaku, showToast, loadData, logAudit, setView, user
         total_harga: totalEfektif, yang_belanja: yangBelanja,
         foto_nota: fotoUrl, catatan, items: itemsWithName, created_by: yangBelanja,
         status_baca: fotoSaja ? 'menunggu' : 'selesai',
-        ocr_text: driveInfo?.text || null, foto_drive: driveInfo?.fileUrl || null,
+        ocr_text: ocrGabung, foto_drive: driveInfo?.fileUrl || null, foto_tambahan: fotoTambahan,
       })
       if (belanjaErr) throw new Error('Gagal simpan nota: ' + belanjaErr.message)
 
@@ -2273,9 +2291,9 @@ function InputNotaView({ bahanBaku, showToast, loadData, logAudit, setView, user
 
   const fotoBlock = (
     <FormRow label={mode === 'foto' ? 'Foto nota' : 'Foto nota (opsional)'}>
-      <input type="file" accept="image/*" onChange={handleFoto} style={{ ...S.input, padding: '8px' }} />
+      <input type="file" accept="image/*" multiple onChange={handleFoto} style={{ ...S.input, padding: '8px' }} />
       <div style={{ fontSize: '11px', color: C.text3, marginTop: '4px' }}>
-        📸 Foto langsung atau pilih dari galeri / WhatsApp. {mode === 'foto' ? 'Cukup foto, tidak perlu ketik barang.' : ''}
+        📸 Foto langsung atau pilih dari galeri / WhatsApp, boleh beberapa sekaligus (nota panjang atau beberapa nota). {mode === 'foto' ? 'Tidak perlu ketik barang.' : ''}
       </div>
       {aiScanning && (
         <div style={{ background: C.blueBg, color: C.blue, padding: '10px 12px', borderRadius: '7px', marginTop: '8px', fontSize: '12px', display: 'flex', alignItems: 'center', gap: '8px' }}>
@@ -2304,8 +2322,19 @@ function InputNotaView({ bahanBaku, showToast, loadData, logAudit, setView, user
           ⚠️ Belum ketemu di master: {items.filter(i => !i.bahan_id && i.namaAI).map(i => i.namaAI).join(', ')}. Pilih barangnya dari dropdown, atau hapus barisnya kalau bukan bahan.
         </div>
       )}
-      {foto && <img src={foto} alt="" style={{ maxWidth: '140px', marginTop: '8px', borderRadius: '6px' }} />}
-      {driveInfo?.fileUrl && <div style={{ fontSize: '10.5px', color: C.text3, marginTop: '4px' }}>☁️ Tersimpan di Google Drive</div>}
+      {(foto || fotoExtra.length > 0) && (
+        <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap', marginTop: '8px' }}>
+          {foto && <div style={{ position: 'relative' }}><img src={foto} alt="" style={{ width: '88px', height: '88px', objectFit: 'cover', borderRadius: '8px', border: `1px solid ${C.border}` }} /><span style={{ position: 'absolute', left: '4px', bottom: '4px', fontSize: '10px', background: 'rgba(0,0,0,0.55)', color: '#fff', padding: '1px 5px', borderRadius: '4px' }}>1</span></div>}
+          {fotoExtra.map((f, i) => (
+            <div key={i} style={{ position: 'relative' }}>
+              <img src={f.b64} alt="" style={{ width: '88px', height: '88px', objectFit: 'cover', borderRadius: '8px', border: `1px solid ${C.border}` }} />
+              <button onClick={() => setFotoExtra(prev => prev.filter((_, k) => k !== i))} aria-label="Hapus foto" style={{ position: 'absolute', top: '3px', right: '3px', width: '20px', height: '20px', borderRadius: '10px', border: 'none', background: 'rgba(0,0,0,0.6)', color: '#fff', fontSize: '11px', cursor: 'pointer' }}>✕</button>
+              <span style={{ position: 'absolute', left: '4px', bottom: '4px', fontSize: '10px', background: 'rgba(0,0,0,0.55)', color: '#fff', padding: '1px 5px', borderRadius: '4px' }}>{i + 2}</span>
+            </div>
+          ))}
+        </div>
+      )}
+      {driveInfo?.fileUrl && <div style={{ fontSize: '10.5px', color: C.text3, marginTop: '4px' }}>☁️ Tersimpan di Google Drive{fotoExtra.length ? ` (${fotoExtra.length + 1} foto)` : ''}</div>}
     </FormRow>
   )
 
@@ -3881,10 +3910,12 @@ function HistoryBelanjaView({ belanja, showToast, loadData }) {
                 </div>
               )
             })}
-            {selected.foto_nota && (
+            {semuaFoto(selected.foto_nota, selected.foto_tambahan).length > 0 && (
               <div style={{ marginTop: '4px' }}>
-                <div style={{ fontSize: '12px', fontWeight: 600, color: C.text3, marginBottom: '8px' }}>📷 Foto nota:</div>
-                <img src={selected.foto_nota} alt="foto nota" onClick={() => setFotoModal(selected.foto_nota)} style={{ width: '100%', maxWidth: '300px', borderRadius: '10px', border: `1px solid ${C.border}`, cursor: 'pointer' }} />
+                <div style={{ fontSize: '12px', fontWeight: 600, color: C.text3, marginBottom: '8px' }}>📷 Foto nota{semuaFoto(selected.foto_nota, selected.foto_tambahan).length > 1 ? ` (${semuaFoto(selected.foto_nota, selected.foto_tambahan).length})` : ''}:</div>
+                <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+                  {semuaFoto(selected.foto_nota, selected.foto_tambahan).map(u => <img key={u} src={u} alt="foto nota" onClick={() => setFotoModal(u)} style={{ width: '140px', borderRadius: '10px', border: `1px solid ${C.border}`, cursor: 'pointer' }} />)}
+                </div>
               </div>
             )}
           </>
