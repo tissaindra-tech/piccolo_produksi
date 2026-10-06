@@ -20,11 +20,11 @@ const METODE = [
   ['lainnya', '➕ Lainnya'],
 ]
 
-const num = (v) => Number(v) || 0
+export const num = (v) => Number(v) || 0
 const shiftDate = (ymd, days) => { const d = new Date(ymd); d.setDate(d.getDate() + days); return formatTanggal(d) }
-const bulanIni = (ymd) => ymd.slice(0, 7)
+export const bulanIni = (ymd) => ymd.slice(0, 7)
 
-function FormRow({ label, children, hint }) {
+export function FormRow({ label, children, hint }) {
   return (
     <div style={{ marginBottom: '10px' }}>
       <label style={S.label}>{label}</label>
@@ -35,7 +35,7 @@ function FormRow({ label, children, hint }) {
 }
 
 // Input angka Rupiah: tampil dengan titik ribuan, simpan sebagai angka
-function RupiahInput({ value, onChange, placeholder = '0', big = false, autoFocus = false }) {
+export function RupiahInput({ value, onChange, placeholder = '0', big = false, autoFocus = false }) {
   const shown = value === '' || value === null || value === undefined ? '' : Number(value).toLocaleString('id-ID')
   return (
     <div style={{ position: 'relative' }}>
@@ -82,7 +82,7 @@ function FotoMultiInput({ label, fotos, onAdd, onRemove, maxMB = 6, showToast })
   )
 }
 
-function FotoInput({ label, foto, onFile, onClear, maxMB = 4, showToast }) {
+export function FotoInput({ label, foto, onFile, onClear, maxMB = 4, showToast }) {
   const handle = (e) => {
     const file = e.target.files?.[0]
     if (!file) return
@@ -109,7 +109,7 @@ function FotoInput({ label, foto, onFile, onClear, maxMB = 4, showToast }) {
   )
 }
 
-function Tabs({ value, onChange, items }) {
+export function Tabs({ value, onChange, items }) {
   return (
     <div style={{ display: 'flex', gap: '4px', borderBottom: `1px solid ${C.border}`, marginBottom: '14px' }}>
       {items.map(([k, l]) => (
@@ -123,7 +123,7 @@ function Tabs({ value, onChange, items }) {
   )
 }
 
-function DatePicker({ value, onChange }) {
+export function DatePicker({ value, onChange }) {
   const today = formatTanggal()
   return (
     <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '12px' }}>
@@ -131,206 +131,6 @@ function DatePicker({ value, onChange }) {
       <input type="date" value={value} max={today} onChange={e => onChange(e.target.value)} style={{ ...S.input, textAlign: 'center', fontWeight: 600 }} />
       <button onClick={() => onChange(shiftDate(value, 1))} disabled={value >= today} style={{ ...S.btn, ...S.btnSecondary, padding: '8px 12px', opacity: value >= today ? 0.4 : 1 }}>›</button>
       {value !== today && <button onClick={() => onChange(today)} style={{ ...S.btn, ...S.btnSecondary, padding: '8px 10px', fontSize: '11px' }}>Hari ini</button>}
-    </div>
-  )
-}
-
-// =====================================================
-// 1. PENJUALAN HARIAN
-// =====================================================
-export function PenjualanView({ showToast, userName, setUserName, loadData, role }) {
-  const isOwner = role === 'owner'
-  const [tab, setTab] = useState('input')
-  const [tanggal, setTanggal] = useState(formatTanggal())
-  const [existing, setExisting] = useState(null)
-  const [total, setTotal] = useState('')
-  const [metode, setMetode] = useState({ tunai: '', qris: '', transfer: '', kartu: '', online: '', lainnya: '' })
-  const [jumlahTrx, setJumlahTrx] = useState('')
-  const [catatan, setCatatan] = useState('')
-  const [foto, setFoto] = useState('')
-  const [fotoFile, setFotoFile] = useState(null)
-  const [fotoEdc, setFotoEdc] = useState('')
-  const [fotoEdcFile, setFotoEdcFile] = useState(null)
-  const [yangInput, setYangInput] = useState(userName)
-  const [saving, setSaving] = useState(false)
-  const [history, setHistory] = useState([])
-  const [justSaved, setJustSaved] = useState(null)
-
-  const loadDate = async (tgl) => {
-    const { data } = await supabase.from('penjualan_harian').select('*').eq('tanggal', tgl).maybeSingle()
-    setExisting(data || null)
-    setJustSaved(null)
-    if (data && !isOwner) {
-      // Staff tidak boleh melihat angka laporan yang sudah ada
-      setTotal(''); setMetode({ tunai: '', qris: '', transfer: '', kartu: '', online: '', lainnya: '' })
-      setJumlahTrx(''); setCatatan(''); setFoto(''); setFotoFile(null); setFotoEdc(''); setFotoEdcFile(null)
-    } else if (data) {
-      setTotal(String(data.total_omzet ?? ''))
-      setMetode({
-        tunai: data.tunai ? String(data.tunai) : '', qris: data.qris ? String(data.qris) : '',
-        transfer: data.transfer ? String(data.transfer) : '', kartu: data.kartu ? String(data.kartu) : '',
-        online: data.online ? String(data.online) : '', lainnya: data.lainnya ? String(data.lainnya) : '',
-      })
-      setJumlahTrx(data.jumlah_transaksi ? String(data.jumlah_transaksi) : '')
-      setCatatan(data.catatan || '')
-      setFoto(data.foto || '')
-      setFotoFile(null)
-      setFotoEdc(data.foto_edc || '')
-      setFotoEdcFile(null)
-    } else {
-      setTotal(''); setMetode({ tunai: '', qris: '', transfer: '', kartu: '', online: '', lainnya: '' })
-      setJumlahTrx(''); setCatatan(''); setFoto(''); setFotoFile(null); setFotoEdc(''); setFotoEdcFile(null)
-    }
-  }
-  const loadHistory = async () => {
-    const { data } = await supabase.from('penjualan_harian').select('*').order('tanggal', { ascending: false }).limit(31)
-    setHistory(data || [])
-  }
-  useEffect(() => { loadDate(tanggal) }, [tanggal])
-  useEffect(() => { if (isOwner) loadHistory() }, [])
-
-  const sumMetode = Object.values(metode).reduce((s, v) => s + num(v), 0)
-  const adaRincian = sumMetode > 0
-  const selisih = adaRincian ? num(total) - sumMetode : 0
-
-  const handleSave = async () => {
-    if (!yangInput.trim()) { showToast('❌ Isi nama yang input'); return }
-    if (!num(total) && !adaRincian) { showToast('❌ Isi total omzet'); return }
-    setSaving(true)
-    setUserName(yangInput)
-    try {
-      let fotoUrl = isOwner ? (existing?.foto || '') : ''
-      if (fotoFile) fotoUrl = await uploadFotoToStorage(fotoFile, 'penjualan')
-      let fotoEdcUrl = isOwner ? (existing?.foto_edc || '') : ''
-      if (fotoEdcFile) fotoEdcUrl = await uploadFotoToStorage(fotoEdcFile, 'penjualan')
-      const finalTotal = num(total) || sumMetode
-      const row = {
-        id: existing?.id || generateId(),
-        tanggal,
-        total_omzet: finalTotal,
-        jumlah_transaksi: jumlahTrx ? Number(jumlahTrx) : null,
-        tunai: num(metode.tunai), qris: num(metode.qris), transfer: num(metode.transfer),
-        kartu: num(metode.kartu), online: num(metode.online), lainnya: num(metode.lainnya),
-        foto: fotoUrl || null, foto_edc: fotoEdcUrl || null, catatan: catatan.trim() || null,
-        yang_input: yangInput, updated_at: new Date().toISOString(),
-      }
-      const { error } = await supabase.from('penjualan_harian').upsert(row, { onConflict: 'tanggal' })
-      if (error) throw error
-      showToast(`✅ Penjualan ${formatTanggalID(tanggal)} tersimpan · ${formatRupiah(finalTotal)}`)
-      await loadDate(tanggal); loadData && loadData()
-      if (isOwner) { await loadHistory(); setTab('history') }
-      else setJustSaved({ tanggal, total: finalTotal })
-    } catch (e) { showToast('❌ ' + e.message) }
-    setSaving(false)
-  }
-
-  const totalBulan = history.filter(h => bulanIni(h.tanggal) === bulanIni(formatTanggal())).reduce((s, h) => s + num(h.total_omzet), 0)
-
-  return (
-    <div>
-      <h2 style={{ fontSize: '17px', fontWeight: 600, marginBottom: '2px' }}>💰 Penjualan Harian</h2>
-      <p style={{ fontSize: '12px', color: C.text3, marginBottom: '12px' }}>Isi sekali sehari setelah tutup kasir. Menggantikan laporan di WA grup.</p>
-
-      {isOwner && <Tabs value={tab} onChange={setTab} items={[['input', '📝 Input'], ['history', `📅 Riwayat (${history.length})`]]} />}
-
-      {tab === 'input' && justSaved && !isOwner && (
-        <div style={{ background: C.greenBg, border: `1px solid ${C.greenBorder}`, borderRadius: '12px', padding: '18px', textAlign: 'center', marginBottom: '12px' }}>
-          <div style={{ fontSize: '28px' }}>✅</div>
-          <div style={{ fontSize: '15px', fontWeight: 700, color: C.green, marginTop: '4px' }}>Laporan {formatTanggalID(justSaved.tanggal)} tersimpan</div>
-          <div style={{ fontSize: '13px', color: C.green }}>{formatRupiah(justSaved.total)} · terima kasih, {yangInput}</div>
-          <div style={{ fontSize: '11px', color: C.text3, marginTop: '8px' }}>Owner sudah bisa melihatnya di Rekap Harian. Tidak perlu kirim ke WA lagi.</div>
-        </div>
-      )}
-
-      {tab === 'input' && existing && !isOwner && !justSaved && (
-        <div>
-          <DatePicker value={tanggal} onChange={setTanggal} />
-          <div style={{ background: C.yellowBg, border: `1px solid ${C.yellowBorder}`, borderRadius: '12px', padding: '16px', textAlign: 'center' }}>
-            <div style={{ fontSize: '24px' }}>🔒</div>
-            <div style={{ fontSize: '14px', fontWeight: 600, color: C.yellow, marginTop: '4px' }}>Tanggal ini sudah dilaporkan oleh {existing.yang_input}</div>
-            <div style={{ fontSize: '12px', color: C.yellow, marginTop: '4px' }}>Hanya owner yang bisa melihat atau mengubah laporan yang sudah masuk. Kalau ada kesalahan, hubungi Tissa atau Diandra.</div>
-          </div>
-        </div>
-      )}
-
-      {tab === 'input' && !(existing && !isOwner) && !justSaved && (
-        <div>
-          <DatePicker value={tanggal} onChange={setTanggal} />
-          {existing && isOwner && (
-            <div style={{ background: C.blueBg, border: `1px solid ${C.blueBorder}`, color: C.blue, borderRadius: '8px', padding: '8px 12px', fontSize: '12px', marginBottom: '10px' }}>
-              ℹ️ Tanggal ini sudah pernah diisi oleh <strong>{existing.yang_input}</strong>. Simpan akan menimpa angka lama.
-            </div>
-          )}
-
-          <FormRow label="Total omzet hari ini (Rp) *" hint="Angka total dari laporan tutup kasir. Kalau kamu isi rincian per metode di bawah, total boleh dikosongkan.">
-            <RupiahInput value={total} onChange={setTotal} big autoFocus />
-          </FormRow>
-
-          <div style={{ background: C.panel2, padding: '10px 12px', borderRadius: '8px', marginBottom: '10px' }}>
-            <div style={{ fontSize: '11px', color: C.text3, fontWeight: 500, marginBottom: '8px' }}>Rincian per cara bayar (opsional, membantu rekonsiliasi kas & bank)</div>
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' }}>
-              {METODE.map(([k, l]) => (
-                <div key={k}>
-                  <label style={S.label}>{l}</label>
-                  <RupiahInput value={metode[k]} onChange={v => setMetode(m => ({ ...m, [k]: v }))} />
-                </div>
-              ))}
-            </div>
-            {adaRincian && (
-              <div style={{ marginTop: '8px', fontSize: '12px', color: selisih === 0 || !num(total) ? C.green : C.red }}>
-                Jumlah rincian: <strong>{formatRupiah(sumMetode)}</strong>
-                {num(total) > 0 && selisih !== 0 && <span> · selisih dengan total {formatRupiah(Math.abs(selisih))} {selisih > 0 ? '(rincian kurang)' : '(rincian lebih)'}</span>}
-                {num(total) > 0 && selisih === 0 && <span> · ✓ sama dengan total</span>}
-              </div>
-            )}
-          </div>
-
-          <FormRow label="Jumlah transaksi / struk (opsional)">
-            <input type="number" inputMode="numeric" value={jumlahTrx} onChange={e => setJumlahTrx(e.target.value)} placeholder="misal: 48" style={S.input} />
-          </FormRow>
-
-          <FotoInput label="📷 Foto 1: laporan tutup kasir / layar POS" foto={foto} showToast={showToast}
-            onFile={(file, b64) => { setFotoFile(file); setFoto(b64) }} onClear={() => { setFotoFile(null); setFoto('') }} />
-          <FotoInput label="📷 Foto 2: settlement EDC BCA" foto={fotoEdc} showToast={showToast}
-            onFile={(file, b64) => { setFotoEdcFile(file); setFotoEdc(b64) }} onClear={() => { setFotoEdcFile(null); setFotoEdc('') }} />
-
-          <FormRow label="Catatan (opsional)">
-            <textarea value={catatan} onChange={e => setCatatan(e.target.value)} rows={2} placeholder="Hujan, ramai event, void 1 struk, dll" style={{ ...S.input, resize: 'vertical' }} />
-          </FormRow>
-
-          <FormRow label="Yang input *">
-            <input value={yangInput} onChange={e => setYangInput(e.target.value)} placeholder="Nama kamu" style={S.input} />
-          </FormRow>
-
-          <button onClick={handleSave} disabled={saving} style={{ ...S.btn, ...S.btnSuccess, width: '100%', padding: '13px', fontSize: '14px', opacity: saving ? 0.6 : 1 }}>
-            {saving ? 'Menyimpan...' : existing ? '💾 Update Penjualan' : '✅ Simpan Penjualan'}
-          </button>
-        </div>
-      )}
-
-      {tab === 'history' && (
-        <div>
-          <div style={{ background: C.greenBg, border: `1px solid ${C.greenBorder}`, borderRadius: '10px', padding: '12px 14px', marginBottom: '12px' }}>
-            <div style={{ fontSize: '11px', color: C.green }}>Total omzet bulan ini</div>
-            <div style={{ fontSize: '20px', fontWeight: 700, color: C.green }}>{formatRupiah(totalBulan)}</div>
-          </div>
-          {history.length === 0 && <div style={{ textAlign: 'center', padding: '24px', color: C.text3, fontSize: '13px' }}>Belum ada laporan penjualan.</div>}
-          {history.map(h => (
-            <div key={h.id} onClick={() => { setTanggal(h.tanggal); setTab('input') }}
-              style={{ background: C.panel, border: `1px solid ${C.border}`, borderRadius: '10px', padding: '11px 14px', marginBottom: '8px', cursor: 'pointer', display: 'flex', gap: '10px', alignItems: 'center' }}>
-              {h.foto ? <img src={h.foto} alt="" style={{ width: '44px', height: '44px', objectFit: 'cover', borderRadius: '6px' }} />
-                : <div style={{ width: '44px', height: '44px', borderRadius: '6px', background: C.panel2, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '18px' }}>💰</div>}
-              <div style={{ flex: 1 }}>
-                <div style={{ fontSize: '13px', fontWeight: 600 }}>{formatTanggalID(h.tanggal)}</div>
-                <div style={{ fontSize: '11px', color: C.text3 }}>
-                  {h.jumlah_transaksi ? `${h.jumlah_transaksi} transaksi · ` : ''}oleh {h.yang_input}
-                </div>
-              </div>
-              <div style={{ fontSize: '14px', fontWeight: 700, color: C.green }}>{formatRupiah(h.total_omzet)}</div>
-            </div>
-          ))}
-        </div>
-      )}
     </div>
   )
 }

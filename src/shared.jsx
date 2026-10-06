@@ -126,7 +126,8 @@ export const SUMBER_DANA_LABEL = {
   transfer_toko: 'Transfer rekening toko',
   qris_toko: 'QRIS toko',
   talangan: 'Ditalangi dulu',
-  transfer_owner: 'Transfer owner',
+  transfer_owner: 'BCA Tissa (pribadi)',
+  shopeepay_tissa: 'ShopeePay Tissa',
 }
 
 // Teks sumber dana + siapa yang menalangi (untuk rekap & riwayat)

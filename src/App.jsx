@@ -5,7 +5,8 @@ import { C, S, Icon, uploadFotoToStorage, compressImage, salinKeDrive, setDriveC
 import { kirimKeDrive } from './nota'
 import { RequestBelanjaView } from './Request'
 import { semuaFoto } from './Kasir'
-import { PenjualanView, PengeluaranKasirView, RekapHarianView, TalanganCard } from './Kasir'
+import { PengeluaranKasirView, RekapHarianView, TalanganCard } from './Kasir'
+import { PenjualanView } from './TutupKasir'
 
 // =====================================================
 // PICCOLO CORNER v3 - Aplikasi Produksi & Inventory
