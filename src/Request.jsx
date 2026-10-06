@@ -1,6 +1,6 @@
 // Request belanja: staff mengajukan barang yang perlu dibeli, owner menyetujui/menolak di aplikasi,
 // lalu request yang disetujui dipakai saat input nota (status jadi "dibeli").
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { supabase, generateId, formatTanggalID } from './supabase'
 import { C, S, Icon } from './shared'
 
@@ -19,7 +19,7 @@ const Badge = ({ status }) => {
 
 const ringkasItems = (items = []) => items.map(i => `${i.nama} ${i.jumlah || ''} ${i.satuan || ''}`.trim()).join(', ')
 
-export function RequestBelanjaView({ bahanBaku = [], requests = [], role, userName, showToast, loadData, setView, logAudit }) {
+export function RequestBelanjaView({ bahanBaku = [], requests = [], role, userName, showToast, loadData, setView, logAudit, requestDraft, setRequestDraft }) {
   const isOwner = role === 'owner'
   const [rows, setRows] = useState([])            // [{ bahan_id, nama, jumlah, satuan }]
   const [cari, setCari] = useState('')
@@ -43,6 +43,11 @@ export function RequestBelanjaView({ bahanBaku = [], requests = [], role, userNa
   }
   const ubah = (idx, f, v) => setRows(rows.map((r, i) => i === idx ? { ...r, [f]: v } : r))
   const hapus = (idx) => setRows(rows.filter((_, i) => i !== idx))
+
+  // Datang dari tombol "Request order" di layar stok: langsung buka form dengan barang itu
+  useEffect(() => {
+    if (requestDraft) { tambah(requestDraft); setBuka(true); setRequestDraft && setRequestDraft(null) }
+  }, [requestDraft])  // eslint-disable-line react-hooks/exhaustive-deps
 
   const kirim = async () => {
     const valid = rows.filter(r => r.bahan_id && Number(r.jumlah) > 0)

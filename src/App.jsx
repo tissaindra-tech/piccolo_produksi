@@ -347,6 +347,7 @@ export default function App() {
   const [auditLog, setAuditLog] = useState([])
   const [penjualan, setPenjualan] = useState([])
   const [requests, setRequests] = useState([])
+  const [requestDraft, setRequestDraft] = useState(null)   // bahan yang mau langsung di-request dari layar stok
   const [lastClosingTanggal, setLastClosingTanggal] = useState(null)
   const [settings, setSettings] = useState({})
   const [loading, setLoading] = useState(false)  // false dulu — true hanya setelah login
@@ -488,7 +489,8 @@ export default function App() {
 
   const props = {
     role, userName, setUserName, view, setView, currentUser, bisaPenjualan, opname, saveSetting, settings,
-    bahanBaku, produksi, belanja, closing, waste, auditLog, penjualan, requests,
+    bahanBaku, produksi, belanja, closing, waste, auditLog, penjualan, requests, requestDraft, setRequestDraft,
+    mintaBeli: (b) => { setRequestDraft(b); setView('request'); window.scrollTo({ top: 0 }) },
     loadData, showToast, logAudit, lazyLoaded,
     daysSinceClosing, isLocked,
     handleLogout: () => { setRole(null); setCurrentUser(null); setUserName(''); setView('home'); setLazyLoaded({}) }
@@ -1236,6 +1238,7 @@ function OwnerHome(props) {
                           <div style={{ fontSize: '10px', color: C.text3 }}>min {b.stok_minimum} {b.satuan_dasar}</div>
                         </div>
                       </div>
+                      <button onClick={() => { setShowStokLow(false); props.mintaBeli && props.mintaBeli(b) }} style={{ marginTop: '8px', ...S.btn, ...S.btnPrimary, padding: '6px 10px', fontSize: '11px' }}>🛒 Request order</button>
                       <div style={{ marginTop: '8px', background: C.redBorder, borderRadius: '99px', height: '4px', overflow: 'hidden' }}>
                         <div style={{ width: `${Math.min(pct, 100)}%`, height: '100%', background: C.red, borderRadius: '99px' }} />
                       </div>
@@ -2475,7 +2478,7 @@ function InputNotaView({ bahanBaku, showToast, loadData, logAudit, setView, user
 // =====================================================
 // UPDATE STOK HARIAN (menggantikan Closing lama)
 // =====================================================
-function ClosingView({ bahanBaku, closing, showToast, loadData, logAudit, userName, setUserName, opname }) {
+function ClosingView({ bahanBaku, closing, showToast, loadData, logAudit, userName, setUserName, opname, mintaBeli }) {
   const [scope, setScope] = useState(opname?.isToday ? 'semua' : 'harian')
   const [wastePrompt, setWastePrompt] = useState(null)   // { b, aktual, sebelum }
   const [wasteQty, setWasteQty] = useState('')
@@ -2748,7 +2751,7 @@ function ClosingView({ bahanBaku, closing, showToast, loadData, logAudit, userNa
                   {b.stok_saat_ini} {b.satuan_dasar}
                 </div>
                 {b.stok_saat_ini < b.stok_minimum && (
-                  <div style={{ fontSize: '10px', color: C.red }}>⚠ rendah</div>
+                  <button onClick={() => mintaBeli && mintaBeli(b)} style={{ marginTop: '2px', fontSize: '10px', fontWeight: 700, color: C.text, background: C.sun, border: 'none', borderRadius: '99px', padding: '3px 8px', cursor: 'pointer' }}>⚠ rendah · request order</button>
                 )}
               </div>
             </div>
@@ -3123,7 +3126,7 @@ function BahanFormModal({ mode, initial, onClose, showToast, loadData, logAudit,
 // =====================================================
 // STOK LIST VIEW (with Tambah/Edit Bahan)
 // =====================================================
-function StokListView({ bahanBaku, showToast, loadData, logAudit, userName, role }) {
+function StokListView({ bahanBaku, showToast, loadData, logAudit, userName, role, mintaBeli }) {
   const [filterFrek, setFilterFrek] = useState('all')
   const toggleFrek = async (b) => {
     const next = b.frekuensi_hitung === 'harian' ? 'mingguan' : 'harian'
@@ -3347,6 +3350,12 @@ function StokListView({ bahanBaku, showToast, loadData, logAudit, userName, role
               <div style={{ fontSize: '15px', fontWeight: 700, color: C[statusColor] }}>{b.stok_saat_ini} {b.satuan_dasar}</div>
             </div>
             <div style={{ display: 'flex', gap: '6px', marginTop: '8px' }}>
+              {statusColor !== 'greenLight' && mintaBeli && (
+                <button onClick={() => mintaBeli(b)} style={{
+                  flex: 2, padding: '6px', fontSize: '11px', fontWeight: 700, borderRadius: '6px',
+                  background: C.sun, color: C.text, border: `1px solid ${C.sun}`, cursor: 'pointer',
+                }}>🛒 Request order</button>
+              )}
               <button onClick={() => setModal({ mode: 'stok', initial: b })} style={{
                 flex: 2, padding: '6px', fontSize: '11px', fontWeight: 600, borderRadius: '6px',
                 background: C.greenBg, color: C.green, border: `1px solid ${C.greenBorder}`, cursor: 'pointer',
