@@ -633,8 +633,8 @@ function AppShell(props) {
     request: ['Request', 'bag'],
   }
   const allMenus = role === 'owner'
-    ? ['home', 'rekap', 'request', 'dashboard', 'stoklist', 'penjualan', 'pengeluaran', 'resep', 'upload', 'auditlog', 'kelolauser']
-    : ['home', 'closing', 'produksi', 'inputnota', 'request', ...(bisaPenjualan ? ['penjualan'] : []), 'pengeluaran', 'stoklist', 'waste', 'histproduksi', 'historybelanja', 'resep']
+    ? ['home', 'inputnota', 'rekap', 'request', 'dashboard', 'stoklist', 'historybelanja', 'penjualan', 'pengeluaran', 'resep', 'upload', 'auditlog', 'kelolauser']
+    : ['home', 'closing', 'produksi', 'pengeluaran', 'request', ...(bisaPenjualan ? ['penjualan'] : []), 'stoklist', 'waste', 'inputnota', 'histproduksi', 'historybelanja', 'resep']
   const primary = allMenus.slice(0, 4)               // 4 ikon di menu bawah + "Lainnya"
   const more = allMenus.slice(4)
   const go = (id) => { setView(id); setMoreOpen(false); window.scrollTo({ top: 0 }) }
@@ -934,8 +934,8 @@ function StaffHome({ bahanBaku, produksi, belanja, closing, penjualan, requests 
           <span style={{ fontSize: '11px', color: C.text3 }}>→</span>
         </div>
 
-        {/* Task 3 — Nota */}
-        <div onClick={() => setView('inputnota')} style={{
+        {/* Task 3 — Uang keluar / nota */}
+        <div onClick={() => setView('pengeluaran')} style={{
           display: 'flex', alignItems: 'center', gap: '10px', padding: bisaPenjualan ? '10px 0' : '10px 0 0',
           borderBottom: bisaPenjualan ? `1px solid ${C.panel2}` : 'none', cursor: 'pointer',
         }}>
@@ -949,14 +949,14 @@ function StaffHome({ bahanBaku, produksi, belanja, closing, penjualan, requests 
           </div>
           <div style={{ flex: 1 }}>
             <div style={{ fontSize: '13px', fontWeight: 500, color: adaNota ? C.text3 : C.text, textDecoration: adaNota ? 'line-through' : 'none' }}>
-              Ada barang masuk? Catat nota
+              Ada uang keluar kasir / belanja? Catat
             </div>
             {adaNota ? (
               <div style={{ fontSize: '11px', color: C.green, marginTop: '1px' }}>
                 ✓ {notaHariIni.length} nota hari ini · {formatRupiah(notaHariIni.reduce((s, b) => s + (b.total_harga || 0), 0))}
               </div>
             ) : (
-              <div style={{ fontSize: '11px', color: C.text3, marginTop: '1px' }}>Belum ada input hari ini</div>
+              <div style={{ fontSize: '11px', color: C.text3, marginTop: '1px' }}>Belum ada hari ini · kalau memang tidak ada, abaikan</div>
             )}
           </div>
           <span style={{ fontSize: '11px', color: C.text3 }}>→</span>
@@ -1017,11 +1017,11 @@ function StaffHome({ bahanBaku, produksi, belanja, closing, penjualan, requests 
         {[
           ['closing', 'clipboard', isOpname ? 'Stok opname' : 'Lanjut update stok', true],
           ['produksi', 'pot', 'Input produksi', false],
-          ['inputnota', 'receipt', 'Nota belanja', false],
+          ['pengeluaran', 'cash', 'Kas kasir keluar', false],
           ['request', 'bag', 'Request belanja', false],
           ['waste', 'trash', 'Catat waste', false],
           ...(bisaPenjualan ? [['penjualan', 'wallet', 'Laporan penjualan', false]] : []),
-          ['pengeluaran', 'cash', 'Kas kasir keluar', false],
+          ['inputnota', 'receipt', 'Nota belanja', false],
         ].map(([id, icon, label, primary]) => (
           <button key={id} onClick={() => setView(id)} style={{
             display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: '10px', padding: '14px', minHeight: '86px',
@@ -1271,9 +1271,9 @@ function OwnerHome(props) {
       )}
 
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px', marginTop: '14px' }}>
-        <BigBtn color="green" icon="calendar" label="Rekap Harian" onClick={() => setView('rekap')} />
-        <BigBtn color="default" icon="chart" label="Dashboard Lengkap" onClick={() => setView('dashboard')} />
-        <BigBtn color="blue" icon="upload" label="Upload Master" onClick={() => setView('upload')} />
+        <BigBtn color="green" icon="receipt" label="Input Nota Belanja" onClick={() => setView('inputnota')} />
+        <BigBtn color="default" icon="calendar" label="Rekap Harian" onClick={() => setView('rekap')} />
+        <BigBtn color="blue" icon="chart" label="Dashboard Lengkap" onClick={() => setView('dashboard')} />
         <BigBtn color="yellow" icon="cash" label="Kas Kasir Keluar" onClick={() => setView('pengeluaran')} />
       </div>
     </div>
