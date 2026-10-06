@@ -782,9 +782,10 @@ function StaffHome({ bahanBaku, produksi, belanja, closing, penjualan, daysSince
       text: `catat nota — ${b.items?.map(i => i.nama).join(', ').slice(0, 40)}`,
       time: b.created_at,
     })),
-    ...(penjualanHariIni ? [{
+    // Angka omzet hanya untuk owner; staff yang berhak input hanya melihat bahwa laporan sudah masuk
+    ...(penjualanHariIni && bisaPenjualan ? [{
       id: 'pj-' + penjualanHariIni.id, type: 'penjualan', who: penjualanHariIni.yang_input,
-      text: `input penjualan — ${formatRupiah(penjualanHariIni.total_omzet)}`,
+      text: 'input laporan penjualan tutup kasir',
       time: penjualanHariIni.updated_at || penjualanHariIni.created_at,
     }] : []),
     ...(() => {
