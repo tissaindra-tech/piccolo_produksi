@@ -5,7 +5,8 @@ import { C, S, Icon, uploadFotoToStorage, compressImage, salinKeDrive, setDriveC
 import { kirimKeDrive } from './nota'
 import { RequestBelanjaView } from './Request'
 import { semuaFoto } from './Kasir'
-import { PenjualanView, PengeluaranKasirView, RekapHarianView, TalanganCard } from './Kasir'
+import { PengeluaranKasirView, RekapHarianView, TalanganCard } from './Kasir'
+import { PenjualanView } from './TutupKasir'
 
 // =====================================================
 // PICCOLO CORNER v3 - Aplikasi Produksi & Inventory
@@ -626,14 +627,14 @@ function AppShell(props) {
   // Semua menu: id → [label, ikon]
   const MENU = {
     home: ['Home', 'home'], produksi: ['Produksi', 'pot'], histproduksi: ['Lap. Produksi', 'clipboard'],
-    inputnota: ['Nota', 'receipt'], penjualan: ['Penjualan', 'wallet'], pengeluaran: ['Kas Keluar', 'cash'],
+    inputnota: ['Nota', 'receipt'], penjualan: ['Tutup Kasir', 'wallet'], pengeluaran: ['Kas Keluar', 'cash'],
     closing: ['Update Stok', 'clipboard'], stoklist: ['Stok', 'box'], waste: ['Waste', 'trash'],
     historybelanja: ['Belanja', 'cart'], resep: ['Resep', 'book'], dashboard: ['Dashboard', 'chart'],
     rekap: ['Rekap Harian', 'calendar'], upload: ['Master', 'upload'], auditlog: ['Audit', 'list'], kelolauser: ['User', 'users'],
     request: ['Request', 'bag'],
   }
   const allMenus = role === 'owner'
-    ? ['home', 'inputnota', 'rekap', 'request', 'dashboard', 'stoklist', 'historybelanja', 'penjualan', 'pengeluaran', 'resep', 'upload', 'auditlog', 'kelolauser']
+    ? ['home', 'penjualan', 'inputnota', 'rekap', 'request', 'dashboard', 'stoklist', 'historybelanja', 'pengeluaran', 'resep', 'upload', 'auditlog', 'kelolauser']
     : ['home', 'closing', 'produksi', 'pengeluaran', 'request', ...(bisaPenjualan ? ['penjualan'] : []), 'stoklist', 'waste', 'inputnota', 'histproduksi', 'historybelanja', 'resep']
   const primary = allMenus.slice(0, 4)               // 4 ikon di menu bawah + "Lainnya"
   const more = allMenus.slice(4)
