@@ -1,8 +1,10 @@
 import { useState, useEffect, useMemo } from 'react'
 import { supabase, generateId, formatTanggal, formatTanggalID, formatRupiah, daysFromNow } from './supabase'
 import * as XLSX from 'xlsx'
-import { C, S, Icon, uploadFotoToStorage, compressImage, salinKeDrive, setDriveContext } from './shared'
+import { C, S, Icon, uploadFotoToStorage, compressImage, salinKeDrive, setDriveContext, KATEGORI_BIAYA } from './shared'
 import { kirimKeDrive } from './nota'
+import { RequestBelanjaView } from './Request'
+import { semuaFoto } from './Kasir'
 import { PenjualanView, PengeluaranKasirView, RekapHarianView, TalanganCard } from './Kasir'
 
 // =====================================================
@@ -345,6 +347,8 @@ export default function App() {
   const [waste, setWaste] = useState([])
   const [auditLog, setAuditLog] = useState([])
   const [penjualan, setPenjualan] = useState([])
+  const [requests, setRequests] = useState([])
+  const [requestDraft, setRequestDraft] = useState(null)   // bahan yang mau langsung di-request dari layar stok
   const [lastClosingTanggal, setLastClosingTanggal] = useState(null)
   const [settings, setSettings] = useState({})
   const [loading, setLoading] = useState(false)  // false dulu — true hanya setelah login
@@ -356,7 +360,7 @@ export default function App() {
   const loadDataCritical = async () => {
     setLoading(true)
     try {
-      const [b, p, bl, c, pj, lc, st] = await Promise.all([
+      const [b, p, bl, c, pj, lc, st, rq] = await Promise.all([
         supabase.from('bahan_baku').select('*').eq('is_active', true).order('nama'),
         supabase.from('produksi').select('*').order('created_at', { ascending: false }).limit(60),
         supabase.from('belanja').select('*').order('created_at', { ascending: false }).limit(50),
@@ -364,7 +368,9 @@ export default function App() {
         supabase.from('penjualan_harian').select('*').order('tanggal', { ascending: false }).limit(40),
         supabase.from('closing_stok').select('tanggal').order('created_at', { ascending: false }).limit(1),
         supabase.from('app_settings').select('*'),
+        supabase.from('request_belanja').select('*').order('created_at', { ascending: false }).limit(100),
       ])
+      setRequests(rq.data || [])
       setBahanBaku(b.data || [])
       setProduksi(p.data || [])
       setBelanja(bl.data || [])
@@ -412,7 +418,7 @@ export default function App() {
   useEffect(() => {
     if (!role) return
     loadDataCritical()
-    const channels = ['bahan_baku', 'produksi', 'belanja', 'closing_stok', 'penjualan_harian', 'app_settings'].map(t =>
+    const channels = ['bahan_baku', 'produksi', 'belanja', 'closing_stok', 'penjualan_harian', 'app_settings', 'request_belanja'].map(t =>
       supabase.channel(`ch-${t}`).on('postgres_changes', { event: '*', schema: 'public', table: t }, () => loadDataCritical()).subscribe()
     )
     return () => channels.forEach(c => supabase.removeChannel(c))
@@ -484,7 +490,8 @@ export default function App() {
 
   const props = {
     role, userName, setUserName, view, setView, currentUser, bisaPenjualan, opname, saveSetting, settings,
-    bahanBaku, produksi, belanja, closing, waste, auditLog, penjualan,
+    bahanBaku, produksi, belanja, closing, waste, auditLog, penjualan, requests, requestDraft, setRequestDraft,
+    mintaBeli: (b) => { setRequestDraft(b); setView('request'); window.scrollTo({ top: 0 }) },
     loadData, showToast, logAudit, lazyLoaded,
     daysSinceClosing, isLocked,
     handleLogout: () => { setRole(null); setCurrentUser(null); setUserName(''); setView('home'); setLazyLoaded({}) }
@@ -623,10 +630,11 @@ function AppShell(props) {
     closing: ['Update Stok', 'clipboard'], stoklist: ['Stok', 'box'], waste: ['Waste', 'trash'],
     historybelanja: ['Belanja', 'cart'], resep: ['Resep', 'book'], dashboard: ['Dashboard', 'chart'],
     rekap: ['Rekap Harian', 'calendar'], upload: ['Master', 'upload'], auditlog: ['Audit', 'list'], kelolauser: ['User', 'users'],
+    request: ['Request', 'bag'],
   }
   const allMenus = role === 'owner'
-    ? ['home', 'rekap', 'dashboard', 'stoklist', 'penjualan', 'pengeluaran', 'resep', 'upload', 'auditlog', 'kelolauser']
-    : ['home', 'closing', 'produksi', 'inputnota', ...(bisaPenjualan ? ['penjualan'] : []), 'pengeluaran', 'stoklist', 'waste', 'histproduksi', 'historybelanja', 'resep']
+    ? ['home', 'inputnota', 'rekap', 'request', 'dashboard', 'stoklist', 'historybelanja', 'penjualan', 'pengeluaran', 'resep', 'upload', 'auditlog', 'kelolauser']
+    : ['home', 'closing', 'produksi', 'pengeluaran', 'request', ...(bisaPenjualan ? ['penjualan'] : []), 'stoklist', 'waste', 'inputnota', 'histproduksi', 'historybelanja', 'resep']
   const primary = allMenus.slice(0, 4)               // 4 ikon di menu bawah + "Lainnya"
   const more = allMenus.slice(4)
   const go = (id) => { setView(id); setMoreOpen(false); window.scrollTo({ top: 0 }) }
@@ -677,6 +685,7 @@ function AppShell(props) {
         {view === 'produksi' && <ProduksiView {...props} />}
         {view === 'histproduksi' && <HistoryProduksiView {...props} />}
         {view === 'inputnota' && <InputNotaView {...props} />}
+        {view === 'request' && <RequestBelanjaView {...props} />}
         {view === 'penjualan' && <PenjualanView {...props} />}
         {view === 'pengeluaran' && <PengeluaranKasirView {...props} />}
         {view === 'rekap' && <RekapHarianView {...props} />}
@@ -742,7 +751,7 @@ function HomeView(props) {
   return <StaffHome {...props} />
 }
 
-function StaffHome({ bahanBaku, produksi, belanja, closing, penjualan, daysSinceClosing, setView, userName, bisaPenjualan, opname }) {
+function StaffHome({ bahanBaku, produksi, belanja, closing, penjualan, requests = [], daysSinceClosing, setView, userName, bisaPenjualan, opname }) {
   const today = formatTanggal()
   // Hari biasa: hanya bahan 'harian'. Hari opname: semua bahan.
   const isOpname = !!opname?.isToday
@@ -925,8 +934,8 @@ function StaffHome({ bahanBaku, produksi, belanja, closing, penjualan, daysSince
           <span style={{ fontSize: '11px', color: C.text3 }}>→</span>
         </div>
 
-        {/* Task 3 — Nota */}
-        <div onClick={() => setView('inputnota')} style={{
+        {/* Task 3 — Uang keluar / nota */}
+        <div onClick={() => setView('pengeluaran')} style={{
           display: 'flex', alignItems: 'center', gap: '10px', padding: bisaPenjualan ? '10px 0' : '10px 0 0',
           borderBottom: bisaPenjualan ? `1px solid ${C.panel2}` : 'none', cursor: 'pointer',
         }}>
@@ -940,14 +949,14 @@ function StaffHome({ bahanBaku, produksi, belanja, closing, penjualan, daysSince
           </div>
           <div style={{ flex: 1 }}>
             <div style={{ fontSize: '13px', fontWeight: 500, color: adaNota ? C.text3 : C.text, textDecoration: adaNota ? 'line-through' : 'none' }}>
-              Ada barang masuk? Catat nota
+              Ada uang keluar kasir / belanja? Catat
             </div>
             {adaNota ? (
               <div style={{ fontSize: '11px', color: C.green, marginTop: '1px' }}>
                 ✓ {notaHariIni.length} nota hari ini · {formatRupiah(notaHariIni.reduce((s, b) => s + (b.total_harga || 0), 0))}
               </div>
             ) : (
-              <div style={{ fontSize: '11px', color: C.text3, marginTop: '1px' }}>Belum ada input hari ini</div>
+              <div style={{ fontSize: '11px', color: C.text3, marginTop: '1px' }}>Belum ada hari ini · kalau memang tidak ada, abaikan</div>
             )}
           </div>
           <span style={{ fontSize: '11px', color: C.text3 }}>→</span>
@@ -996,15 +1005,23 @@ function StaffHome({ bahanBaku, produksi, belanja, closing, penjualan, daysSince
         </div>
       )}
 
+      {requests.some(r => r.status === 'disetujui') && (
+        <div onClick={() => setView('request')} style={{ background: C.greenLightBg, border: `1px solid ${C.greenLightBorder}`, borderRadius: '10px', padding: '10px 12px', marginBottom: '12px', cursor: 'pointer', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <span style={{ fontSize: '12px', color: C.greenLight }}>✅ <strong>{requests.filter(r => r.status === 'disetujui').length} request belanja disetujui</strong> — siap dibelanjakan</span>
+          <span style={{ fontSize: '11px', color: C.greenLight }}>Lihat →</span>
+        </div>
+      )}
+
       {/* Aksi cepat */}
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px', marginBottom: '14px' }}>
         {[
           ['closing', 'clipboard', isOpname ? 'Stok opname' : 'Lanjut update stok', true],
           ['produksi', 'pot', 'Input produksi', false],
-          ['inputnota', 'receipt', 'Nota belanja', false],
+          ['pengeluaran', 'cash', 'Kas kasir keluar', false],
+          ['request', 'bag', 'Request belanja', false],
           ['waste', 'trash', 'Catat waste', false],
           ...(bisaPenjualan ? [['penjualan', 'wallet', 'Laporan penjualan', false]] : []),
-          ['pengeluaran', 'cash', 'Kas kasir keluar', false],
+          ['inputnota', 'receipt', 'Nota belanja', false],
         ].map(([id, icon, label, primary]) => (
           <button key={id} onClick={() => setView(id)} style={{
             display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: '10px', padding: '14px', minHeight: '86px',
@@ -1126,7 +1143,8 @@ function DriveCard({ settings, saveSetting, showToast, menunggu = 0 }) {
 }
 
 function OwnerHome(props) {
-  const { bahanBaku, produksi, belanja, setView, opname, saveSetting } = props
+  const { bahanBaku, produksi, belanja, setView, opname, saveSetting, requests = [] } = props
+  const reqMenunggu = requests.filter(r => r.status === 'menunggu')
   const [showStokLow, setShowStokLow] = useState(false)
   const stokRendah = bahanBaku.filter(b => b.stok_saat_ini < b.stok_minimum)
   const expiring = bahanBaku.filter(b => {
@@ -1175,6 +1193,16 @@ function OwnerHome(props) {
         </div>
       )}
 
+      <div onClick={() => setView('request')} style={{ background: reqMenunggu.length ? C.yellowBg : C.panel, border: `1px solid ${reqMenunggu.length ? C.yellowBorder : C.border}`, borderRadius: '12px', padding: '12px 14px', marginBottom: '14px', cursor: 'pointer', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+        <div>
+          <div style={{ fontSize: '13px', fontWeight: 600 }}>🛒 Request belanja</div>
+          <div style={{ fontSize: '11px', color: reqMenunggu.length ? C.yellow : C.text3 }}>
+            {reqMenunggu.length ? `${reqMenunggu.length} menunggu persetujuan · ${reqMenunggu.map(r => r.dibuat_oleh).filter((v, i, a) => a.indexOf(v) === i).join(', ')}` : 'Tidak ada yang menunggu'}
+          </div>
+        </div>
+        <span style={{ fontSize: '11px', color: C.text3 }}>Buka →</span>
+      </div>
+
       <TalanganCard showToast={props.showToast} />
 
       <DriveCard settings={props.settings} saveSetting={saveSetting} showToast={props.showToast} menunggu={belanja.filter(b => b.status_baca === 'menunggu').length} />
@@ -1212,6 +1240,7 @@ function OwnerHome(props) {
                           <div style={{ fontSize: '10px', color: C.text3 }}>min {b.stok_minimum} {b.satuan_dasar}</div>
                         </div>
                       </div>
+                      <button onClick={() => { setShowStokLow(false); props.mintaBeli && props.mintaBeli(b) }} style={{ marginTop: '8px', ...S.btn, ...S.btnPrimary, padding: '6px 10px', fontSize: '11px' }}>🛒 Request order</button>
                       <div style={{ marginTop: '8px', background: C.redBorder, borderRadius: '99px', height: '4px', overflow: 'hidden' }}>
                         <div style={{ width: `${Math.min(pct, 100)}%`, height: '100%', background: C.red, borderRadius: '99px' }} />
                       </div>
@@ -1242,9 +1271,9 @@ function OwnerHome(props) {
       )}
 
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px', marginTop: '14px' }}>
-        <BigBtn color="green" icon="calendar" label="Rekap Harian" onClick={() => setView('rekap')} />
-        <BigBtn color="default" icon="chart" label="Dashboard Lengkap" onClick={() => setView('dashboard')} />
-        <BigBtn color="blue" icon="upload" label="Upload Master" onClick={() => setView('upload')} />
+        <BigBtn color="green" icon="receipt" label="Input Nota Belanja" onClick={() => setView('inputnota')} />
+        <BigBtn color="default" icon="calendar" label="Rekap Harian" onClick={() => setView('rekap')} />
+        <BigBtn color="blue" icon="chart" label="Dashboard Lengkap" onClick={() => setView('dashboard')} />
         <BigBtn color="yellow" icon="cash" label="Kas Kasir Keluar" onClick={() => setView('pengeluaran')} />
       </div>
     </div>
@@ -2011,7 +2040,7 @@ function HistoryProduksiView({ produksi, bahanBaku, showToast, loadData, logAudi
     </div>
   )
 }
-function InputNotaView({ bahanBaku, showToast, loadData, logAudit, setView, userName, setUserName, isLocked, settings }) {
+function InputNotaView({ bahanBaku, showToast, loadData, logAudit, setView, userName, setUserName, isLocked, settings, requests = [] }) {
   const [tanggal, setTanggal] = useState(formatTanggal())
   const [jalur, setJalur] = useState('kecil')
   const [sumberDana, setSumberDana] = useState('kas_kasir')
@@ -2030,6 +2059,24 @@ function InputNotaView({ bahanBaku, showToast, loadData, logAudit, setView, user
   const [totalNota, setTotalNota] = useState('')      // total di nota (mode foto, opsional)
   const [isiBarang, setIsiBarang] = useState(false)  // mode foto: staff memilih mengisi barang sendiri
   const driveUrl = settings?.drive?.url || ''
+  const [requestId, setRequestId] = useState(null)   // request belanja yang sedang dibelanjakan
+  const [fotoExtra, setFotoExtra] = useState([])     // foto nota lembar ke-2 dst: [{ file, b64, text }]
+  const [biayaLain, setBiayaLain] = useState([])     // baris di nota yang bukan bahan stok: [{ keterangan, kategori, harga }]
+  const totalBiayaLain = biayaLain.reduce((s, x) => s + (Number(x.harga) || 0), 0)
+  const reqSiap = requests.filter(r => r.status === 'disetujui')
+  const pakaiRequest = (r) => {
+    if (requestId === r.id) { setRequestId(null); return }
+    setRequestId(r.id)
+    if (mode === 'manual' || isiBarang) {
+      setItems((r.items || []).map(i => {
+        const b = bahanBaku.find(x => String(x.id) === String(i.bahan_id))
+        let exp = ''
+        if (b?.is_perishable && b?.umur_simpan_hari) { const d = new Date(); d.setDate(d.getDate() + b.umur_simpan_hari); exp = d.toISOString().split('T')[0] }
+        return { bahan_id: b ? b.id : '', jumlah: String(i.jumlah || ''), satuan: i.satuan || b?.satuan_dasar || '', harga: '', tanggal_expired: exp }
+      }))
+    }
+    showToast(`Nota ini untuk request ${r.dibuat_oleh}`)
+  }
 
   // Terapkan hasil pembacaan (dari Claude atau OCR Drive) ke form
   const terapkanHasil = (data, sumber) => {
@@ -2105,22 +2152,35 @@ function InputNotaView({ bahanBaku, showToast, loadData, logAudit, setView, user
     setItems(newItems)
   }
 
-  const totalHarga = items.reduce((s, i) => s + (Number(i.harga) || 0), 0)
+  const totalHarga = items.reduce((s, i) => s + (Number(i.harga) || 0), 0) + totalBiayaLain
+
+  const bacaFile = (f) => new Promise((res, rej) => { const r = new FileReader(); r.onload = ev => res(ev.target.result); r.onerror = rej; r.readAsDataURL(f) })
 
   const handleFoto = async (e) => {
-    const file = e.target.files?.[0]
-    if (!file) return
-    if (file.size > 15 * 1024 * 1024) { showToast('❌ Foto terlalu besar (max 15MB)'); return }
-    let kecil = file
-    try { kecil = await compressImage(file, 1600, 0.85) } catch { /* pakai file asli */ }
-    setFotoFile(kecil)
-    const reader = new FileReader()
-    reader.onload = (ev) => {
-      const b64 = ev.target.result
-      setFoto(b64)
-      if (mode === 'foto') scanNotaWithAI(b64)   // langsung dibaca setelah foto dipilih
+    const files = Array.from(e.target.files || [])
+    e.target.value = ''
+    if (!files.length) return
+    let adaUtama = !!(foto || fotoFile)
+    let nExtra = fotoExtra.length
+    for (const file of files) {
+      if (file.size > 15 * 1024 * 1024) { showToast(`❌ ${file.name}: foto terlalu besar (max 15MB)`); continue }
+      let kecil = file
+      try { kecil = await compressImage(file, 1600, 0.85) } catch { /* pakai file asli */ }
+      const b64 = await bacaFile(kecil)
+      if (!adaUtama) {
+        // foto pertama: jadi foto utama, langsung disalin ke Drive & dibaca
+        adaUtama = true
+        setFotoFile(kecil); setFoto(b64)
+        if (mode === 'foto') scanNotaWithAI(b64)
+      } else {
+        // lembar berikutnya: simpan + salin ke Drive (teks OCR ikut disimpan)
+        const idx = nExtra++
+        setFotoExtra(prev => [...prev, { file: kecil, b64, text: '' }])
+        if (driveUrl) salinKeDrive(b64, 'belanja', tanggal, true).then(r => {
+          if (r?.ok && r.text) setFotoExtra(prev => prev.map((x, i) => i === idx ? { ...x, text: r.text } : x))
+        }).catch(() => {})
+      }
     }
-    reader.readAsDataURL(kecil)
   }
 
   const handleSubmit = async () => {
@@ -2128,8 +2188,9 @@ function InputNotaView({ bahanBaku, showToast, loadData, logAudit, setView, user
     if (mode === 'foto' && !foto) { showToast('❌ Upload foto nota dulu, atau pilih "Ketik manual"'); return }
     if (sumberDana === 'talangan' && !dibayarOleh.trim()) { showToast('❌ Isi siapa yang menalangi'); return }
     const validItems = items.filter(i => i.bahan_id && i.jumlah && i.harga)
-    const fotoSaja = mode === 'foto' && validItems.length === 0
-    if (!fotoSaja && validItems.length === 0) { showToast('❌ Minimal 1 item'); return }
+    const biayaValid = biayaLain.filter(x => x.keterangan.trim() && Number(x.harga) > 0)
+    const fotoSaja = mode === 'foto' && validItems.length === 0 && biayaValid.length === 0
+    if (!fotoSaja && validItems.length === 0 && biayaValid.length === 0) { showToast('❌ Minimal 1 barang atau 1 biaya'); return }
     const totalEfektif = fotoSaja ? (Number(totalNota) || 0) : totalHarga
     if (jalur === 'kecil' && totalEfektif >= THRESHOLD_KECIL) {
       showToast(`❌ Belanja ≥ Rp ${THRESHOLD_KECIL.toLocaleString('id-ID')} pakai jalur Normal`); return
@@ -2153,6 +2214,9 @@ function InputNotaView({ bahanBaku, showToast, loadData, logAudit, setView, user
       if (fotoFile) {
         fotoUrl = await uploadFotoToStorage(fotoFile, 'belanja', { skipDrive: !!driveInfo, tanggal })
       }
+      const fotoTambahan = []
+      for (const f of fotoExtra) fotoTambahan.push(await uploadFotoToStorage(f.file, 'belanja', { skipDrive: !!driveUrl, tanggal }))
+      const ocrGabung = [driveInfo?.text || '', ...fotoExtra.map(f => f.text || '')].filter(Boolean).join('\n\n--- lembar berikutnya ---\n\n') || null
       const { error: belanjaErr } = await supabase.from('belanja').insert({
         id: newId, tanggal, jalur, sumber_dana: sumberDana,
         dibayar_oleh: sumberDana === 'talangan' ? dibayarOleh.trim() : null,
@@ -2160,7 +2224,8 @@ function InputNotaView({ bahanBaku, showToast, loadData, logAudit, setView, user
         total_harga: totalEfektif, yang_belanja: yangBelanja,
         foto_nota: fotoUrl, catatan, items: itemsWithName, created_by: yangBelanja,
         status_baca: fotoSaja ? 'menunggu' : 'selesai',
-        ocr_text: driveInfo?.text || null, foto_drive: driveInfo?.fileUrl || null,
+        ocr_text: ocrGabung, foto_drive: driveInfo?.fileUrl || null, foto_tambahan: fotoTambahan,
+        biaya_lain: biayaValid.map(x => ({ keterangan: x.keterangan.trim(), kategori: x.kategori, harga: Number(x.harga) })),
       })
       if (belanjaErr) throw new Error('Gagal simpan nota: ' + belanjaErr.message)
 
@@ -2211,6 +2276,9 @@ function InputNotaView({ bahanBaku, showToast, loadData, logAudit, setView, user
         })
       }
 
+      if (requestId) {
+        await supabase.from('request_belanja').update({ status: 'dibeli', belanja_id: newId }).eq('id', requestId)
+      }
       showToast(fotoSaja ? '✅ Foto nota tersimpan. Barang & stok diisi Claude pada tugas pagi.' : '✅ Nota tersimpan, stok auto-update')
       loadData()
       setView('home')
@@ -2221,16 +2289,16 @@ function InputNotaView({ bahanBaku, showToast, loadData, logAudit, setView, user
   if (isLocked) return <LockedScreen />
 
   const jalurInfo = {
-    kecil: { color: 'greenLight', text: '🟢 Belanja Kecil: Nominal < Rp 100rb. Siapa saja boleh beli pakai kas kasir. Approval via WA.' },
-    normal: { color: 'blue', text: '🔵 Belanja Normal: Nominal ≥ Rp 100rb. Transfer atau petty cash. WA owner untuk konfirmasi.' },
+    kecil: { color: 'greenLight', text: '🟢 Belanja Kecil: Nominal < Rp 100rb. Siapa saja boleh beli pakai kas kasir. Kalau bukan belanja rutin, ajukan dulu lewat Request belanja.' },
+    normal: { color: 'blue', text: '🔵 Belanja Normal: Nominal ≥ Rp 100rb. Transfer atau petty cash. Ajukan dulu lewat Request belanja supaya disetujui owner.' },
     darurat: { color: 'red', text: '🔴 Belanja Darurat: Untuk situasi mendesak. WA owner dulu, lalu beli pakai kas kasir.' }
   }[jalur]
 
   const fotoBlock = (
     <FormRow label={mode === 'foto' ? 'Foto nota' : 'Foto nota (opsional)'}>
-      <input type="file" accept="image/*" onChange={handleFoto} style={{ ...S.input, padding: '8px' }} />
+      <input type="file" accept="image/*" multiple onChange={handleFoto} style={{ ...S.input, padding: '8px' }} />
       <div style={{ fontSize: '11px', color: C.text3, marginTop: '4px' }}>
-        📸 Foto langsung atau pilih dari galeri / WhatsApp. {mode === 'foto' ? 'Cukup foto, tidak perlu ketik barang.' : ''}
+        📸 Foto langsung atau pilih dari galeri / WhatsApp, boleh beberapa sekaligus (nota panjang atau beberapa nota). {mode === 'foto' ? 'Tidak perlu ketik barang.' : ''}
       </div>
       {aiScanning && (
         <div style={{ background: C.blueBg, color: C.blue, padding: '10px 12px', borderRadius: '7px', marginTop: '8px', fontSize: '12px', display: 'flex', alignItems: 'center', gap: '8px' }}>
@@ -2259,8 +2327,19 @@ function InputNotaView({ bahanBaku, showToast, loadData, logAudit, setView, user
           ⚠️ Belum ketemu di master: {items.filter(i => !i.bahan_id && i.namaAI).map(i => i.namaAI).join(', ')}. Pilih barangnya dari dropdown, atau hapus barisnya kalau bukan bahan.
         </div>
       )}
-      {foto && <img src={foto} alt="" style={{ maxWidth: '140px', marginTop: '8px', borderRadius: '6px' }} />}
-      {driveInfo?.fileUrl && <div style={{ fontSize: '10.5px', color: C.text3, marginTop: '4px' }}>☁️ Tersimpan di Google Drive</div>}
+      {(foto || fotoExtra.length > 0) && (
+        <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap', marginTop: '8px' }}>
+          {foto && <div style={{ position: 'relative' }}><img src={foto} alt="" style={{ width: '88px', height: '88px', objectFit: 'cover', borderRadius: '8px', border: `1px solid ${C.border}` }} /><span style={{ position: 'absolute', left: '4px', bottom: '4px', fontSize: '10px', background: 'rgba(0,0,0,0.55)', color: '#fff', padding: '1px 5px', borderRadius: '4px' }}>1</span></div>}
+          {fotoExtra.map((f, i) => (
+            <div key={i} style={{ position: 'relative' }}>
+              <img src={f.b64} alt="" style={{ width: '88px', height: '88px', objectFit: 'cover', borderRadius: '8px', border: `1px solid ${C.border}` }} />
+              <button onClick={() => setFotoExtra(prev => prev.filter((_, k) => k !== i))} aria-label="Hapus foto" style={{ position: 'absolute', top: '3px', right: '3px', width: '20px', height: '20px', borderRadius: '10px', border: 'none', background: 'rgba(0,0,0,0.6)', color: '#fff', fontSize: '11px', cursor: 'pointer' }}>✕</button>
+              <span style={{ position: 'absolute', left: '4px', bottom: '4px', fontSize: '10px', background: 'rgba(0,0,0,0.55)', color: '#fff', padding: '1px 5px', borderRadius: '4px' }}>{i + 2}</span>
+            </div>
+          ))}
+        </div>
+      )}
+      {driveInfo?.fileUrl && <div style={{ fontSize: '10.5px', color: C.text3, marginTop: '4px' }}>☁️ Tersimpan di Google Drive{fotoExtra.length ? ` (${fotoExtra.length + 1} foto)` : ''}</div>}
     </FormRow>
   )
 
@@ -2314,6 +2393,23 @@ function InputNotaView({ bahanBaku, showToast, loadData, logAudit, setView, user
       <FormRow label="Yang belanja"><input type="text" value={yangBelanja} onChange={e => setYangBelanja(e.target.value)} placeholder="Nama..." style={S.input} /></FormRow>
 
       <hr style={{ border: 'none', borderTop: `1px solid ${C.panel2}`, margin: '14px 0' }} />
+
+      {reqSiap.length > 0 && (
+        <div style={{ background: C.panel, border: `1px solid ${C.border}`, borderRadius: '12px', padding: '10px 12px', marginBottom: '12px' }}>
+          <div style={{ fontSize: '12px', fontWeight: 600, marginBottom: '6px' }}>🛒 Belanja ini untuk request yang mana?</div>
+          <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
+            {reqSiap.map(r => (
+              <button key={r.id} onClick={() => pakaiRequest(r)} style={{
+                ...S.btn, padding: '6px 10px', fontSize: '11px', borderRadius: '99px', textAlign: 'left',
+                background: requestId === r.id ? C.sun : C.panel2, color: C.text, border: `1px solid ${requestId === r.id ? C.sun : C.border}`,
+              }}>
+                {requestId === r.id ? '✓ ' : ''}{r.dibuat_oleh} · {(r.items || []).length} barang · {formatTanggalID(r.tanggal)}
+              </button>
+            ))}
+          </div>
+          <div style={{ fontSize: '10.5px', color: C.text3, marginTop: '6px' }}>Opsional. Kalau dipilih, request ditandai "sudah dibeli" dan (mode ketik manual) daftar barangnya terisi.</div>
+        </div>
+      )}
 
       <div style={{ display: 'flex', gap: '8px', marginBottom: '12px' }}>
         <ModeBtn id="foto" icon="📷" title="Upload nota" sub="Cukup foto. Barang dibaca Claude pada tugas pagi, foto tersimpan di Google Drive. Untuk nota cetak: Lotte, Mr. Broiler, grosir." />
@@ -2392,10 +2488,26 @@ function InputNotaView({ bahanBaku, showToast, loadData, logAudit, setView, user
         )
       })}
 
-      <button onClick={addItem} style={{ ...S.btn, background: 'transparent', border: `1px dashed ${C.border}`, color: C.text2, width: '100%', marginBottom: '14px' }}>+ Tambah barang</button>
+      <button onClick={addItem} style={{ ...S.btn, background: 'transparent', border: `1px dashed ${C.border}`, color: C.text2, width: '100%', marginBottom: '10px' }}>+ Tambah barang</button>
+
+      {/* Baris di nota yang bukan bahan stok (tisu, plastik, parkir, dll) */}
+      <div style={{ background: C.panel, border: `1px solid ${C.border}`, borderRadius: '10px', padding: '10px 12px', marginBottom: '14px' }}>
+        <div style={{ fontSize: '12px', fontWeight: 600, marginBottom: biayaLain.length ? '8px' : 0 }}>🧻 Barang bukan stok di nota ini <span style={{ fontWeight: 400, color: C.text3 }}>(tisu, plastik, parkir, dll · tidak masuk stok)</span></div>
+        {biayaLain.map((x, idx) => (
+          <div key={idx} style={{ display: 'grid', gridTemplateColumns: '1.4fr 1fr 0.9fr auto', gap: '6px', marginBottom: '6px' }}>
+            <input value={x.keterangan} onChange={e => setBiayaLain(biayaLain.map((y, i) => i === idx ? { ...y, keterangan: e.target.value } : y))} placeholder="Tisu, plastik..." style={{ ...S.input, padding: '8px' }} />
+            <select value={x.kategori} onChange={e => setBiayaLain(biayaLain.map((y, i) => i === idx ? { ...y, kategori: e.target.value } : y))} style={{ ...S.input, padding: '8px', fontSize: '12px' }}>
+              {KATEGORI_BIAYA.map(k => <option key={k} value={k}>{k}</option>)}
+            </select>
+            <input type="number" inputMode="numeric" value={x.harga} onChange={e => setBiayaLain(biayaLain.map((y, i) => i === idx ? { ...y, harga: e.target.value } : y))} placeholder="Rp" style={{ ...S.input, padding: '8px' }} />
+            <button onClick={() => setBiayaLain(biayaLain.filter((_, i) => i !== idx))} style={{ ...S.btn, ...S.btnDanger, padding: '8px 10px' }}>✕</button>
+          </div>
+        ))}
+        <button onClick={() => setBiayaLain([...biayaLain, { keterangan: '', kategori: 'Perlengkapan (tisu, plastik, dll)', harga: '' }])} style={{ ...S.btn, background: 'transparent', border: `1px dashed ${C.border}`, color: C.text2, width: '100%', fontSize: '12px', marginTop: biayaLain.length ? '2px' : '8px' }}>+ Tambah baris bukan stok</button>
+      </div>
 
       <div style={{ background: C.greenBg, color: C.green, padding: '10px 12px', borderRadius: '7px', fontSize: '12px', marginBottom: '12px' }}>
-        💰 Total: <strong>{formatRupiah(totalHarga)}</strong>
+        💰 Total: <strong>{formatRupiah(totalHarga)}</strong>{totalBiayaLain > 0 && <span style={{ color: C.text3 }}> · bahan {formatRupiah(totalHarga - totalBiayaLain)} + bukan stok {formatRupiah(totalBiayaLain)}</span>}
       </div>
       </>)}
 
@@ -2416,7 +2528,7 @@ function InputNotaView({ bahanBaku, showToast, loadData, logAudit, setView, user
 // =====================================================
 // UPDATE STOK HARIAN (menggantikan Closing lama)
 // =====================================================
-function ClosingView({ bahanBaku, closing, showToast, loadData, logAudit, userName, setUserName, opname }) {
+function ClosingView({ bahanBaku, closing, showToast, loadData, logAudit, userName, setUserName, opname, mintaBeli }) {
   const [scope, setScope] = useState(opname?.isToday ? 'semua' : 'harian')
   const [wastePrompt, setWastePrompt] = useState(null)   // { b, aktual, sebelum }
   const [wasteQty, setWasteQty] = useState('')
@@ -2689,7 +2801,7 @@ function ClosingView({ bahanBaku, closing, showToast, loadData, logAudit, userNa
                   {b.stok_saat_ini} {b.satuan_dasar}
                 </div>
                 {b.stok_saat_ini < b.stok_minimum && (
-                  <div style={{ fontSize: '10px', color: C.red }}>⚠ rendah</div>
+                  <button onClick={() => mintaBeli && mintaBeli(b)} style={{ marginTop: '2px', fontSize: '10px', fontWeight: 700, color: C.text, background: C.sun, border: 'none', borderRadius: '99px', padding: '3px 8px', cursor: 'pointer' }}>⚠ rendah · request order</button>
                 )}
               </div>
             </div>
@@ -3064,7 +3176,7 @@ function BahanFormModal({ mode, initial, onClose, showToast, loadData, logAudit,
 // =====================================================
 // STOK LIST VIEW (with Tambah/Edit Bahan)
 // =====================================================
-function StokListView({ bahanBaku, showToast, loadData, logAudit, userName, role }) {
+function StokListView({ bahanBaku, showToast, loadData, logAudit, userName, role, mintaBeli }) {
   const [filterFrek, setFilterFrek] = useState('all')
   const toggleFrek = async (b) => {
     const next = b.frekuensi_hitung === 'harian' ? 'mingguan' : 'harian'
@@ -3288,6 +3400,12 @@ function StokListView({ bahanBaku, showToast, loadData, logAudit, userName, role
               <div style={{ fontSize: '15px', fontWeight: 700, color: C[statusColor] }}>{b.stok_saat_ini} {b.satuan_dasar}</div>
             </div>
             <div style={{ display: 'flex', gap: '6px', marginTop: '8px' }}>
+              {statusColor !== 'greenLight' && mintaBeli && (
+                <button onClick={() => mintaBeli(b)} style={{
+                  flex: 2, padding: '6px', fontSize: '11px', fontWeight: 700, borderRadius: '6px',
+                  background: C.sun, color: C.text, border: `1px solid ${C.sun}`, cursor: 'pointer',
+                }}>🛒 Request order</button>
+              )}
               <button onClick={() => setModal({ mode: 'stok', initial: b })} style={{
                 flex: 2, padding: '6px', fontSize: '11px', fontWeight: 600, borderRadius: '6px',
                 background: C.greenBg, color: C.green, border: `1px solid ${C.greenBorder}`, cursor: 'pointer',
@@ -3813,10 +3931,22 @@ function HistoryBelanjaView({ belanja, showToast, loadData }) {
                 </div>
               )
             })}
-            {selected.foto_nota && (
+            {(selected.biaya_lain || []).length > 0 && (
+              <div style={{ background: C.panel, border: `1px solid ${C.border}`, borderRadius: '12px', padding: '12px 14px', marginBottom: '12px' }}>
+                <div style={{ fontSize: '12px', fontWeight: 600, color: C.text3, marginBottom: '6px' }}>🧻 Bukan stok di nota ini</div>
+                {selected.biaya_lain.map((x, i) => (
+                  <div key={i} style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12.5px', padding: '3px 0' }}>
+                    <span>{x.keterangan} <span style={{ color: C.text3 }}>· {x.kategori}</span></span><strong>{formatRupiah(x.harga)}</strong>
+                  </div>
+                ))}
+              </div>
+            )}
+            {semuaFoto(selected.foto_nota, selected.foto_tambahan).length > 0 && (
               <div style={{ marginTop: '4px' }}>
-                <div style={{ fontSize: '12px', fontWeight: 600, color: C.text3, marginBottom: '8px' }}>📷 Foto nota:</div>
-                <img src={selected.foto_nota} alt="foto nota" onClick={() => setFotoModal(selected.foto_nota)} style={{ width: '100%', maxWidth: '300px', borderRadius: '10px', border: `1px solid ${C.border}`, cursor: 'pointer' }} />
+                <div style={{ fontSize: '12px', fontWeight: 600, color: C.text3, marginBottom: '8px' }}>📷 Foto nota{semuaFoto(selected.foto_nota, selected.foto_tambahan).length > 1 ? ` (${semuaFoto(selected.foto_nota, selected.foto_tambahan).length})` : ''}:</div>
+                <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+                  {semuaFoto(selected.foto_nota, selected.foto_tambahan).map(u => <img key={u} src={u} alt="foto nota" onClick={() => setFotoModal(u)} style={{ width: '140px', borderRadius: '10px', border: `1px solid ${C.border}`, cursor: 'pointer' }} />)}
+                </div>
               </div>
             )}
           </>

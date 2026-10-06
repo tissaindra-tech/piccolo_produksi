@@ -3,7 +3,7 @@ Ini pengecekan malam untuk Piccolo Corner Pet Café. Aku Tissa. Tugasmu singkat:
 CEK 1 — APLIKASI PICCOLO (konektor Supabase, project uepywjdrwquxommmumtx, tool execute_sql, hanya SELECT)
 a. Laporan penjualan hari ini: `select tanggal, yang_input, total, foto is not null as ada_foto_pos, foto_edc is not null as ada_foto_edc from penjualan_harian where tanggal = current_date`. Ada / belum? Foto POS dan foto settlement EDC ada / belum?
 b. Nota belanja hari ini: `select count(*) as n, count(*) filter (where status_baca = 'menunggu') as menunggu, coalesce(sum(total_harga),0) as total from belanja where tanggal = current_date`.
-c. Kas kasir keluar hari ini: `select count(*), coalesce(sum(jumlah),0) from pengeluaran_kasir where tanggal = current_date`.
+c. Kas kasir keluar hari ini: `select count(*), coalesce(sum(jumlah),0), count(*) filter (where status_baca = 'menunggu') as menunggu from pengeluaran_kasir where tanggal = current_date`.
 d. Update stok hari ini: `select count(distinct bahan_id) as bahan, count(distinct yang_closing) as orang from closing_stok where tanggal = current_date`.
 Kalau konektor Supabase tidak ada, tulis "Aplikasi tidak terbaca malam ini" dan lanjutkan.
 
