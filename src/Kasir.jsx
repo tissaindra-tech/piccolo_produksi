@@ -507,7 +507,7 @@ export function PengeluaranKasirView({ showToast, userName, setUserName, loadDat
             <input type="checkbox" id="ada-nota" checked={adaNota} onChange={e => setAdaNota(e.target.checked)} />
             <label htmlFor="ada-nota" style={{ fontSize: '12px', cursor: 'pointer' }}>Ada nota / struk fisik</label>
           </div>
-          <FotoMultiInput label={adaNota ? 'Foto nota * (boleh beberapa)' : 'Foto bukti (opsional, misal nota atau screenshot WA persetujuan)'} fotos={fotos} showToast={showToast}
+          <FotoMultiInput label={(adaNota || kategori === BELANJA_BAHAN) ? 'Foto nota * (boleh beberapa)' : 'Foto bukti (opsional, misal nota atau screenshot WA persetujuan)'} fotos={fotos} showToast={showToast}
             onAdd={list => setFotos(prev => [...prev, ...list])} onRemove={i => setFotos(prev => prev.filter((_, k) => k !== i))} />
 
           <FormRow label="Catatan (opsional)">
