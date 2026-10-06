@@ -68,7 +68,7 @@ function FotoInput({ label, foto, onFile, onClear, maxMB = 4, showToast }) {
       ) : (
         <label style={{ display: 'block', border: `1.5px dashed ${C.border2}`, borderRadius: '8px', padding: '16px', textAlign: 'center', cursor: 'pointer', background: C.panel, fontSize: '12px', color: C.text2 }}>
           📷 Tap untuk foto / pilih gambar
-          <input type="file" accept="image/*" capture="environment" onChange={handle} style={{ display: 'none' }} />
+          <input type="file" accept="image/*" onChange={handle} style={{ display: 'none' }} />
         </label>
       )}
     </div>
