@@ -1,7 +1,7 @@
 import { useState, useEffect, useMemo } from 'react'
 import { supabase, generateId, formatTanggal, formatTanggalID, formatRupiah, daysFromNow } from './supabase'
 import * as XLSX from 'xlsx'
-import { C, S, Icon, uploadFotoToStorage, compressImage, salinKeDrive, setDriveContext } from './shared'
+import { C, S, Icon, uploadFotoToStorage, compressImage, salinKeDrive, setDriveContext, KATEGORI_BIAYA } from './shared'
 import { kirimKeDrive } from './nota'
 import { RequestBelanjaView } from './Request'
 import { semuaFoto } from './Kasir'
@@ -2060,6 +2060,8 @@ function InputNotaView({ bahanBaku, showToast, loadData, logAudit, setView, user
   const driveUrl = settings?.drive?.url || ''
   const [requestId, setRequestId] = useState(null)   // request belanja yang sedang dibelanjakan
   const [fotoExtra, setFotoExtra] = useState([])     // foto nota lembar ke-2 dst: [{ file, b64, text }]
+  const [biayaLain, setBiayaLain] = useState([])     // baris di nota yang bukan bahan stok: [{ keterangan, kategori, harga }]
+  const totalBiayaLain = biayaLain.reduce((s, x) => s + (Number(x.harga) || 0), 0)
   const reqSiap = requests.filter(r => r.status === 'disetujui')
   const pakaiRequest = (r) => {
     if (requestId === r.id) { setRequestId(null); return }
@@ -2149,7 +2151,7 @@ function InputNotaView({ bahanBaku, showToast, loadData, logAudit, setView, user
     setItems(newItems)
   }
 
-  const totalHarga = items.reduce((s, i) => s + (Number(i.harga) || 0), 0)
+  const totalHarga = items.reduce((s, i) => s + (Number(i.harga) || 0), 0) + totalBiayaLain
 
   const bacaFile = (f) => new Promise((res, rej) => { const r = new FileReader(); r.onload = ev => res(ev.target.result); r.onerror = rej; r.readAsDataURL(f) })
 
@@ -2185,8 +2187,9 @@ function InputNotaView({ bahanBaku, showToast, loadData, logAudit, setView, user
     if (mode === 'foto' && !foto) { showToast('❌ Upload foto nota dulu, atau pilih "Ketik manual"'); return }
     if (sumberDana === 'talangan' && !dibayarOleh.trim()) { showToast('❌ Isi siapa yang menalangi'); return }
     const validItems = items.filter(i => i.bahan_id && i.jumlah && i.harga)
-    const fotoSaja = mode === 'foto' && validItems.length === 0
-    if (!fotoSaja && validItems.length === 0) { showToast('❌ Minimal 1 item'); return }
+    const biayaValid = biayaLain.filter(x => x.keterangan.trim() && Number(x.harga) > 0)
+    const fotoSaja = mode === 'foto' && validItems.length === 0 && biayaValid.length === 0
+    if (!fotoSaja && validItems.length === 0 && biayaValid.length === 0) { showToast('❌ Minimal 1 barang atau 1 biaya'); return }
     const totalEfektif = fotoSaja ? (Number(totalNota) || 0) : totalHarga
     if (jalur === 'kecil' && totalEfektif >= THRESHOLD_KECIL) {
       showToast(`❌ Belanja ≥ Rp ${THRESHOLD_KECIL.toLocaleString('id-ID')} pakai jalur Normal`); return
@@ -2221,6 +2224,7 @@ function InputNotaView({ bahanBaku, showToast, loadData, logAudit, setView, user
         foto_nota: fotoUrl, catatan, items: itemsWithName, created_by: yangBelanja,
         status_baca: fotoSaja ? 'menunggu' : 'selesai',
         ocr_text: ocrGabung, foto_drive: driveInfo?.fileUrl || null, foto_tambahan: fotoTambahan,
+        biaya_lain: biayaValid.map(x => ({ keterangan: x.keterangan.trim(), kategori: x.kategori, harga: Number(x.harga) })),
       })
       if (belanjaErr) throw new Error('Gagal simpan nota: ' + belanjaErr.message)
 
@@ -2483,10 +2487,26 @@ function InputNotaView({ bahanBaku, showToast, loadData, logAudit, setView, user
         )
       })}
 
-      <button onClick={addItem} style={{ ...S.btn, background: 'transparent', border: `1px dashed ${C.border}`, color: C.text2, width: '100%', marginBottom: '14px' }}>+ Tambah barang</button>
+      <button onClick={addItem} style={{ ...S.btn, background: 'transparent', border: `1px dashed ${C.border}`, color: C.text2, width: '100%', marginBottom: '10px' }}>+ Tambah barang</button>
+
+      {/* Baris di nota yang bukan bahan stok (tisu, plastik, parkir, dll) */}
+      <div style={{ background: C.panel, border: `1px solid ${C.border}`, borderRadius: '10px', padding: '10px 12px', marginBottom: '14px' }}>
+        <div style={{ fontSize: '12px', fontWeight: 600, marginBottom: biayaLain.length ? '8px' : 0 }}>🧻 Barang bukan stok di nota ini <span style={{ fontWeight: 400, color: C.text3 }}>(tisu, plastik, parkir, dll · tidak masuk stok)</span></div>
+        {biayaLain.map((x, idx) => (
+          <div key={idx} style={{ display: 'grid', gridTemplateColumns: '1.4fr 1fr 0.9fr auto', gap: '6px', marginBottom: '6px' }}>
+            <input value={x.keterangan} onChange={e => setBiayaLain(biayaLain.map((y, i) => i === idx ? { ...y, keterangan: e.target.value } : y))} placeholder="Tisu, plastik..." style={{ ...S.input, padding: '8px' }} />
+            <select value={x.kategori} onChange={e => setBiayaLain(biayaLain.map((y, i) => i === idx ? { ...y, kategori: e.target.value } : y))} style={{ ...S.input, padding: '8px', fontSize: '12px' }}>
+              {KATEGORI_BIAYA.map(k => <option key={k} value={k}>{k}</option>)}
+            </select>
+            <input type="number" inputMode="numeric" value={x.harga} onChange={e => setBiayaLain(biayaLain.map((y, i) => i === idx ? { ...y, harga: e.target.value } : y))} placeholder="Rp" style={{ ...S.input, padding: '8px' }} />
+            <button onClick={() => setBiayaLain(biayaLain.filter((_, i) => i !== idx))} style={{ ...S.btn, ...S.btnDanger, padding: '8px 10px' }}>✕</button>
+          </div>
+        ))}
+        <button onClick={() => setBiayaLain([...biayaLain, { keterangan: '', kategori: 'Perlengkapan (tisu, plastik, dll)', harga: '' }])} style={{ ...S.btn, background: 'transparent', border: `1px dashed ${C.border}`, color: C.text2, width: '100%', fontSize: '12px', marginTop: biayaLain.length ? '2px' : '8px' }}>+ Tambah baris bukan stok</button>
+      </div>
 
       <div style={{ background: C.greenBg, color: C.green, padding: '10px 12px', borderRadius: '7px', fontSize: '12px', marginBottom: '12px' }}>
-        💰 Total: <strong>{formatRupiah(totalHarga)}</strong>
+        💰 Total: <strong>{formatRupiah(totalHarga)}</strong>{totalBiayaLain > 0 && <span style={{ color: C.text3 }}> · bahan {formatRupiah(totalHarga - totalBiayaLain)} + bukan stok {formatRupiah(totalBiayaLain)}</span>}
       </div>
       </>)}
 
@@ -3910,6 +3930,16 @@ function HistoryBelanjaView({ belanja, showToast, loadData }) {
                 </div>
               )
             })}
+            {(selected.biaya_lain || []).length > 0 && (
+              <div style={{ background: C.panel, border: `1px solid ${C.border}`, borderRadius: '12px', padding: '12px 14px', marginBottom: '12px' }}>
+                <div style={{ fontSize: '12px', fontWeight: 600, color: C.text3, marginBottom: '6px' }}>🧻 Bukan stok di nota ini</div>
+                {selected.biaya_lain.map((x, i) => (
+                  <div key={i} style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12.5px', padding: '3px 0' }}>
+                    <span>{x.keterangan} <span style={{ color: C.text3 }}>· {x.kategori}</span></span><strong>{formatRupiah(x.harga)}</strong>
+                  </div>
+                ))}
+              </div>
+            )}
             {semuaFoto(selected.foto_nota, selected.foto_tambahan).length > 0 && (
               <div style={{ marginTop: '4px' }}>
                 <div style={{ fontSize: '12px', fontWeight: 600, color: C.text3, marginBottom: '8px' }}>📷 Foto nota{semuaFoto(selected.foto_nota, selected.foto_tambahan).length > 1 ? ` (${semuaFoto(selected.foto_nota, selected.foto_tambahan).length})` : ''}:</div>

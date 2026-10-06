@@ -7,9 +7,9 @@
 import { useState, useEffect, useMemo } from 'react'
 import * as XLSX from 'xlsx'
 import { supabase, generateId, formatTanggal, formatTanggalID, formatRupiah } from './supabase'
-import { C, S, uploadFotoToStorage, SUMBER_DANA_LABEL, sumberText } from './shared'
+import { C, S, uploadFotoToStorage, SUMBER_DANA_LABEL, sumberText, KATEGORI_BIAYA } from './shared'
 
-const KATEGORI_PENGELUARAN = ['Operasional', 'Transport / parkir', 'Konsumsi staff', 'Perbaikan / alat', 'Kebersihan', 'Lainnya']
+const KATEGORI_PENGELUARAN = KATEGORI_BIAYA
 const CARA_PERSETUJUAN = ['WA', 'Telepon', 'Lisan']
 const METODE = [
   ['tunai', '💵 Tunai'],
@@ -411,7 +411,7 @@ export function PengeluaranKasirView({ showToast, userName, setUserName, loadDat
   return (
     <div>
       <h2 style={{ fontSize: '17px', fontWeight: 600, marginBottom: '2px' }}>💸 Pengeluaran Kas Kasir</h2>
-      <p style={{ fontSize: '12px', color: C.text3, marginBottom: '12px' }}>Uang kasir yang keluar bukan untuk belanja bahan. Belanja bahan tetap lewat menu 🧾 Nota.</p>
+      <p style={{ fontSize: '12px', color: C.text3, marginBottom: '12px' }}>Untuk uang keluar yang bukan belanja bahan: parkir, galon, ongkir, konsumsi staff. Belanja bahan lewat menu 🧾 Nota; kalau satu nota campur bahan dan bukan bahan, input semuanya di Nota (ada bagian "barang bukan stok").</p>
 
       <Tabs value={tab} onChange={setTab} items={[['catat', '📝 Catat'], ['riwayat', `📅 Riwayat (${listBulan.length})`]]} />
 
@@ -579,6 +579,10 @@ export function RekapHarianView({ bahanBaku, showToast, setView }) {
       sumber: sumberText(b), jalur: b.jalur, yang_belanja: b.yang_belanja, foto: b.foto_nota, dibayar_oleh: b.dibayar_oleh || '', status_ganti: b.status_ganti || '',
     })
   }))
+  const biayaRows = []
+  belanja.forEach(b => (b.biaya_lain || []).forEach(x => biayaRows.push({
+    nota_id: b.id, keterangan: x.keterangan, kategori: x.kategori, harga: x.harga, sumber: sumberText(b), yang_belanja: b.yang_belanja, foto: b.foto_nota,
+  })))
   const tanpaKode = belanjaRows.filter(r => !r.kode && bahanById[r.bahan_id]?.status_accurate !== 'tidak_perlu').length
 
   const teksRekap = () => {
@@ -593,6 +597,7 @@ export function RekapHarianView({ bahanBaku, showToast, setView }) {
     L.push('')
     L.push(`BELANJA BAHAN (${belanja.length} nota, ${formatRupiah(totalBelanja)})`)
     belanjaRows.forEach(r => L.push(`  ${r.kode || '[tanpa kode]'} ${r.nama_acc || r.nama} — ${r.jumlah} ${r.satuan} — ${formatRupiah(r.harga)} — ${r.sumber}`))
+    biayaRows.forEach(r => L.push(`  [bukan stok] ${r.keterangan} — ${r.kategori} — ${formatRupiah(r.harga)} — ${r.sumber} (nota ${r.yang_belanja})`))
     L.push('')
     L.push(`PENGELUARAN KASIR (${pengeluaran.length}, ${formatRupiah(totalPengeluaran)})`)
     pengeluaran.forEach(p => L.push(`  ${p.keperluan} — ${formatRupiah(p.jumlah)} — ${p.kategori} — ${sumberText(p)} — acc ${p.disetujui_oleh} (${p.cara_persetujuan})${p.ada_nota ? ' — ada nota' : ' — tanpa nota'}`))

@@ -117,6 +117,9 @@ export async function uploadFotoToStorage(file, folder, opts = {}) {
 }
 
 // Label sumber dana yang dipakai di Nota & Pengeluaran Kasir
+// Kategori pengeluaran bukan-stok (kas kasir keluar & baris non-bahan di nota belanja)
+export const KATEGORI_BIAYA = ['Operasional', 'Transport / parkir', 'Konsumsi staff', 'Perbaikan / alat', 'Kebersihan', 'Perlengkapan (tisu, plastik, dll)', 'Lainnya']
+
 export const SUMBER_DANA_LABEL = {
   kas_kasir: 'Kas kasir',
   petty_cash: 'Petty cash',
