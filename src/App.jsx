@@ -3386,7 +3386,7 @@ function StokListView({ bahanBaku, showToast, loadData, logAudit, userName, role
                 {(role === 'owner' || b.kode_accurate) && (
                 <div style={{ fontSize: '10px', marginTop: '2px', fontFamily: 'monospace',
                   color: b.kode_accurate ? C.green : b.status_accurate === 'tidak_perlu' ? C.text3 : b.status_accurate === 'buat_baru' ? C.yellow : C.red }}>
-                  {b.kode_accurate ? `Accurate ${b.kode_accurate}`
+                  {b.kode_accurate ? `Accurate ${b.kode_accurate}${role === 'owner' && b.nama_accurate ? ' · ' + b.nama_accurate : ''}`
                     : b.status_accurate === 'tidak_perlu' ? 'cukup di aplikasi, tidak ke Accurate'
                     : b.status_accurate === 'buat_baru' ? 'perlu dibuat di Accurate'
                     : 'belum terhubung ke Accurate'}
