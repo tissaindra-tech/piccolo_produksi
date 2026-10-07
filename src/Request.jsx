@@ -29,7 +29,8 @@ export function RequestBelanjaView({ bahanBaku = [], requests = [], role, userNa
   const [noteOwner, setNoteOwner] = useState({})   // id -> catatan owner
   const [buka, setBuka] = useState(!isOwner)
 
-  const mentah = bahanBaku.filter(b => b.is_active !== false && b.kategori === 'mentah')
+  // Semua barang aktif yang bisa dibeli: mentah, prepack, maupun barang jadi (Indomie, susu kedelai botol)
+  const mentah = bahanBaku.filter(b => b.is_active !== false)
   const stokRendah = mentah.filter(b => Number(b.stok_saat_ini) < Number(b.stok_minimum)).slice(0, 8)
   const hasil = cari.trim()
     ? mentah.filter(b => b.nama.toLowerCase().includes(cari.toLowerCase()) && !rows.some(r => r.bahan_id === b.id)).slice(0, 8)

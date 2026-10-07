@@ -2113,7 +2113,7 @@ function InputNotaView({ bahanBaku, showToast, loadData, logAudit, setView, user
       const base64Data = base64ImageFull.split(',')[1]
       const mediaType  = base64ImageFull.split(';')[0].split(':')[1] || 'image/jpeg'
       const master = bahanBaku
-        .filter(b => b.is_active !== false && b.kategori === 'mentah')
+        .filter(b => b.is_active !== false)
         .map(b => ({ id: String(b.id), nama: b.nama, satuan_dasar: b.satuan_dasar, kemasan: b.kemasan || null, qty_per_kemasan: b.qty_per_kemasan || null }))
 
       const driveP = driveUrl
