@@ -2046,6 +2046,8 @@ function InputNotaView({ bahanBaku, showToast, loadData, logAudit, setView, user
   const [jalur, setJalur] = useState('kecil')
   const [sumberDana, setSumberDana] = useState('kas_kasir')
   const [dibayarOleh, setDibayarOleh] = useState('')
+  const [digantiSebagian, setDigantiSebagian] = useState('')   // talangan: bagian yang sudah diganti owner
+  const [sumberGanti, setSumberGanti] = useState('transfer_owner')
   const [yangBelanja, setYangBelanja] = useState(userName)
   const [items, setItems] = useState([{ bahan_id: '', jumlah: '', harga: '', satuan: '', tanggal_expired: '' }])
   const [foto, setFoto] = useState('')
@@ -2221,7 +2223,9 @@ function InputNotaView({ bahanBaku, showToast, loadData, logAudit, setView, user
       const { error: belanjaErr } = await supabase.from('belanja').insert({
         id: newId, tanggal, jalur, sumber_dana: sumberDana,
         dibayar_oleh: sumberDana === 'talangan' ? dibayarOleh.trim() : null,
-        status_ganti: sumberDana === 'talangan' ? 'belum' : null,
+        status_ganti: sumberDana === 'talangan' ? (Number(digantiSebagian) >= totalEfektif && totalEfektif > 0 ? 'sudah' : 'belum') : null,
+        jumlah_diganti: sumberDana === 'talangan' ? Math.min(Number(digantiSebagian) || 0, totalEfektif || Number(digantiSebagian) || 0) : 0,
+        sumber_ganti: sumberDana === 'talangan' && Number(digantiSebagian) > 0 ? sumberGanti : null,
         total_harga: totalEfektif, yang_belanja: yangBelanja,
         foto_nota: fotoUrl, catatan, items: itemsWithName, created_by: yangBelanja,
         status_baca: fotoSaja ? 'menunggu' : 'selesai',
@@ -2388,7 +2392,21 @@ function InputNotaView({ bahanBaku, showToast, loadData, logAudit, setView, user
           <input value={dibayarOleh} onChange={e => setDibayarOleh(e.target.value)} placeholder="Siapa yang bayar dulu? misal: Tissa, Diandra, Hans"
             style={{ ...S.input, marginTop: '6px', background: C.yellowBg, borderColor: C.yellowBorder }} />
         )}
-        {sumberDana === 'talangan' && <div style={{ fontSize: '10px', color: C.yellow, marginTop: '3px' }}>Dicatat sebagai hutang toko ke orang itu, sampai owner menandai "sudah diganti".</div>}
+        {sumberDana === 'talangan' && (
+          <div style={{ background: C.yellowBg, border: `1px solid ${C.yellowBorder}`, borderRadius: '8px', padding: '8px 10px', marginTop: '6px' }}>
+            <div style={{ fontSize: '11px', color: C.yellow, marginBottom: '6px' }}>Dicatat sebagai hutang toko ke orang itu sampai diganti. Kalau sebagian sudah diganti (misal Tissa transfer 700.000 duluan), isi di sini:</div>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '6px' }}>
+              <input type="number" inputMode="numeric" value={digantiSebagian} onChange={e => setDigantiSebagian(e.target.value)} placeholder="Sudah diganti Rp (opsional)" style={{ ...S.input, padding: '8px', fontSize: '12px' }} />
+              <select value={sumberGanti} onChange={e => setSumberGanti(e.target.value)} style={{ ...S.input, padding: '8px', fontSize: '12px' }}>
+                <option value="transfer_owner">dari BCA Tissa (pribadi)</option>
+                <option value="shopeepay_tissa">dari ShopeePay Tissa</option>
+                <option value="transfer_toko">dari rekening toko</option>
+                <option value="kas_kasir">dari kas kasir</option>
+                <option value="petty_cash">dari petty cash</option>
+              </select>
+            </div>
+          </div>
+        )}
       </FormRow>
 
       <FormRow label="Yang belanja"><input type="text" value={yangBelanja} onChange={e => setYangBelanja(e.target.value)} placeholder="Nama..." style={S.input} /></FormRow>
