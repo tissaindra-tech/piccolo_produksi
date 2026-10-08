@@ -301,6 +301,9 @@ export function PenjualanView({ showToast, userName, setUserName, loadData, role
 
           <Kartu judul="4 · Pengeluaran dari dana lain (bukan laci kasir)">
             <div style={{ fontSize: '11px', color: C.text3, marginBottom: '6px' }}>BCA Tissa, ShopeePay Tissa, talangan Diandra/staff, transfer atau QRIS toko. Tidak mengurangi kas laci.</div>
+            <div style={{ fontSize: '11px', color: C.sunDark, background: C.yellowBg, borderRadius: '8px', padding: '7px 10px', marginBottom: '8px', lineHeight: 1.45 }}>
+              💡 Satu belanja dibayar dari dua sumber? Buat dua baris dengan nama yang sama, misal "Lotte (talangan Diandra)" Rp 700.000 dan "Lotte (sisa, BCA Tissa)" Rp 150.000. Claude akan menggabungkannya jadi satu pembelian saat input ke Accurate.
+            </div>
             {lainTercatat.length > 0 && (
               <div style={{ marginBottom: '8px' }}>
                 <div style={{ fontSize: '11px', color: C.text3, marginBottom: '4px' }}>Sudah tercatat hari ini:</div>
