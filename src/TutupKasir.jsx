@@ -89,13 +89,13 @@ export function PenjualanView({ showToast, userName, setUserName, loadData, role
       supabase.from('penjualan_harian').select('*').eq('tanggal', tgl).maybeSingle(),
       supabase.from('penjualan_harian').select('tanggal, kas_akhir').lt('tanggal', tgl).not('kas_akhir', 'is', null).order('tanggal', { ascending: false }).limit(1),
       supabase.from('pengeluaran_kasir').select('id, keperluan, jumlah, sumber_dana, dibayar_oleh, yang_input, dipindah_ke_belanja, cara_persetujuan').eq('tanggal', tgl).order('created_at'),
-      supabase.from('belanja').select('id, total_harga, sumber_dana, yang_belanja, items, status_baca').eq('tanggal', tgl).order('created_at'),
+      supabase.from('belanja').select('id, total_harga, sumber_dana, dibayar_oleh, jumlah_diganti, yang_belanja, items, status_baca').eq('tanggal', tgl).order('created_at'),
     ])
     const data = pj.data || null
     setExisting(data); setJustSaved(null)
     const rows = [
       ...(pk.data || []).filter(p => !p.dipindah_ke_belanja).map(p => ({ id: 'p' + p.id, keperluan: p.keperluan, jumlah: num(p.jumlah), sumber: p.sumber_dana, dibayar_oleh: p.dibayar_oleh, oleh: p.yang_input })),
-      ...(bl.data || []).map(b => ({ id: 'b' + b.id, keperluan: 'Belanja bahan' + (b.status_baca === 'menunggu' ? ' (nota menunggu dibaca)' : ': ' + (b.items || []).map(i => i.nama).join(', ').slice(0, 50)), jumlah: num(b.total_harga), sumber: b.sumber_dana, dibayar_oleh: null, oleh: b.yang_belanja })),
+      ...(bl.data || []).map(b => ({ id: 'b' + b.id, keperluan: 'Belanja bahan' + (b.status_baca === 'menunggu' ? ' (nota menunggu dibaca)' : ': ' + (b.items || []).map(i => i.nama).join(', ').slice(0, 50)), jumlah: num(b.total_harga), sumber: b.sumber_dana, dibayar_oleh: b.dibayar_oleh, diganti: num(b.jumlah_diganti), oleh: b.yang_belanja })),
     ]
     setTercatat(rows)
     const prevRow = prev.data?.[0]
@@ -130,6 +130,11 @@ export function PenjualanView({ showToast, userName, setUserName, loadData, role
   const selisihFisik = kasFisik === '' ? null : num(kasFisik) - kasAkhir
   const lainTercatat = tercatat.filter(r => r.sumber !== 'kas_kasir')
   const totalLain = lainTercatat.reduce((s, r) => s + r.jumlah, 0) + barisLain.reduce((s, r) => s + num(r.jumlah), 0)
+  // Talangan hari ini per orang (sisa yang belum diganti) → "uang yang akan di-reimburse"
+  const talanganPerOrang = {}
+  ;[...lainTercatat.filter(r => r.sumber === 'talangan').map(r => ({ nama: r.dibayar_oleh || '?', sisa: r.jumlah - (r.diganti || 0) })),
+    ...barisLain.filter(r => r.sumber === 'talangan' && num(r.jumlah) > 0).map(r => ({ nama: (r.dibayar_oleh || '?').trim() || '?', sisa: num(r.jumlah) }))]
+    .forEach(t => { if (t.sisa > 0) talanganPerOrang[t.nama] = (talanganPerOrang[t.nama] || 0) + t.sisa })
 
   const teksLaporan = () => {
     const L = [`Report ${tglID(tanggal)}`]
@@ -141,7 +146,8 @@ export function PenjualanView({ showToast, userName, setUserName, loadData, role
     const kasRows = [...tercatat.filter(r => r.sumber === 'kas_kasir'), ...barisKas.filter(r => r.keperluan.trim() && num(r.jumlah))]
     if (kasRows.length) { L.push(''); L.push(`Pengeluaran kas kasir ${tglID(tanggal)}:`); kasRows.forEach(r => L.push(`• ${r.keperluan}, ${rp(r.jumlah)}`)); L.push(`Total: ${rp(pengeluaranKas)}`) }
     const lainRows = [...lainTercatat, ...barisLain.filter(r => r.keperluan.trim() && num(r.jumlah))]
-    if (lainRows.length) { L.push(''); L.push('Pengeluaran dana lain:'); lainRows.forEach(r => L.push(`• ${r.keperluan}, ${rp(r.jumlah)} (${SUMBER_DANA_LABEL[r.sumber] || r.sumber}${r.sumber === 'talangan' && r.dibayar_oleh ? ' ' + r.dibayar_oleh : ''})`)); L.push(`Total: ${rp(totalLain)}`) }
+    if (lainRows.length) { L.push(''); L.push('Pengeluaran dana lain:'); lainRows.forEach(r => L.push(`• ${r.keperluan}, ${rp(r.jumlah)} (${SUMBER_DANA_LABEL[r.sumber] || r.sumber}${r.sumber === 'talangan' && r.dibayar_oleh ? ' ' + r.dibayar_oleh : ''}${r.sumber === 'talangan' && r.diganti > 0 ? `, sudah diganti ${rp(r.diganti)}, sisa ${rp(r.jumlah - r.diganti)}` : ''})`)); L.push(`Total: ${rp(totalLain)}`) }
+    Object.entries(talanganPerOrang).forEach(([n, v]) => L.push(`Uang yang akan di-reimburse ke ${n}: ${rp(v)}`))
     if (catatan.trim()) { L.push(''); L.push(`Catatan: ${catatan.trim()}`) }
     return L.join('\n')
   }
@@ -316,6 +322,7 @@ export function PenjualanView({ showToast, userName, setUserName, loadData, role
             )}
             <BarisUang rows={barisLain} setRows={setBarisLain} denganSumber placeholder="misal: beli kopi Alfa, gaji harian" />
             {totalLain > 0 && <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: '8px', fontSize: '12px' }}><span style={{ color: C.text3 }}>Total dana lain</span><strong>{formatRupiah(totalLain)}</strong></div>}
+            {Object.entries(talanganPerOrang).map(([n, v]) => <div key={n} style={{ display: 'flex', justifyContent: 'space-between', marginTop: '4px', fontSize: '12px', color: C.yellow }}><span>🙋 Harus diganti ke {n}</span><strong>{formatRupiah(v)}</strong></div>)}
           </Kartu>
 
           <Kartu judul="5 · Foto">

@@ -594,17 +594,17 @@ export function TalanganCard({ showToast }) {
   const [open, setOpen] = useState(false)
   const load = async () => {
     const [a, b] = await Promise.all([
-      supabase.from('belanja').select('id, tanggal, total_harga, dibayar_oleh, yang_belanja, catatan').eq('status_ganti', 'belum').order('tanggal'),
-      supabase.from('pengeluaran_kasir').select('id, tanggal, jumlah, dibayar_oleh, keperluan').eq('status_ganti', 'belum').order('tanggal'),
+      supabase.from('belanja').select('id, tanggal, total_harga, dibayar_oleh, yang_belanja, catatan, jumlah_diganti, sumber_ganti').eq('status_ganti', 'belum').order('tanggal'),
+      supabase.from('pengeluaran_kasir').select('id, tanggal, jumlah, dibayar_oleh, keperluan, jumlah_diganti, sumber_ganti').eq('status_ganti', 'belum').order('tanggal'),
     ])
     setRows([
-      ...(a.data || []).map(r => ({ tabel: 'belanja', id: r.id, tanggal: r.tanggal, jumlah: num(r.total_harga), oleh: r.dibayar_oleh || '?', ket: 'Belanja bahan' + (r.catatan ? ' · ' + r.catatan : '') })),
-      ...(b.data || []).map(r => ({ tabel: 'pengeluaran_kasir', id: r.id, tanggal: r.tanggal, jumlah: num(r.jumlah), oleh: r.dibayar_oleh || '?', ket: r.keperluan })),
+      ...(a.data || []).map(r => ({ tabel: 'belanja', id: r.id, tanggal: r.tanggal, total: num(r.total_harga), jumlah: num(r.total_harga) - num(r.jumlah_diganti), diganti: num(r.jumlah_diganti), sumberGanti: r.sumber_ganti, oleh: r.dibayar_oleh || '?', ket: 'Belanja bahan' + (r.catatan ? ' · ' + r.catatan : '') })),
+      ...(b.data || []).map(r => ({ tabel: 'pengeluaran_kasir', id: r.id, tanggal: r.tanggal, total: num(r.jumlah), jumlah: num(r.jumlah) - num(r.jumlah_diganti), diganti: num(r.jumlah_diganti), sumberGanti: r.sumber_ganti, oleh: r.dibayar_oleh || '?', ket: r.keperluan })),
     ].sort((x, y) => (x.tanggal || '').localeCompare(y.tanggal || '')))
   }
   useEffect(() => { load() }, [])
   const tandaiGanti = async (r) => {
-    const { error } = await supabase.from(r.tabel).update({ status_ganti: 'sudah', tanggal_ganti: formatTanggal() }).eq('id', r.id)
+    const { error } = await supabase.from(r.tabel).update({ status_ganti: 'sudah', tanggal_ganti: formatTanggal(), jumlah_diganti: r.total }).eq('id', r.id)
     if (error) { showToast('❌ ' + error.message); return }
     showToast(`✅ ${formatRupiah(r.jumlah)} ke ${r.oleh} ditandai sudah diganti`)
     load()
@@ -628,7 +628,7 @@ export function TalanganCard({ showToast }) {
       {open && rows.map(r => (
         <div key={r.tabel + r.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '8px', borderTop: `1px solid ${C.yellowBorder}`, padding: '8px 0', fontSize: '12px' }}>
           <div style={{ flex: 1, minWidth: 0 }}>
-            <div style={{ fontWeight: 600 }}>{r.oleh} · {formatRupiah(r.jumlah)}</div>
+            <div style={{ fontWeight: 600 }}>{r.oleh} · sisa {formatRupiah(r.jumlah)}{r.diganti > 0 ? <span style={{ fontWeight: 400, color: C.text3 }}> (dari {formatRupiah(r.total)}, sudah diganti {formatRupiah(r.diganti)}{r.sumberGanti ? ' ' + (SUMBER_DANA_LABEL[r.sumberGanti] || r.sumberGanti) : ''})</span> : null}</div>
             <div style={{ fontSize: '10px', color: C.text3 }}>{formatTanggalID(r.tanggal)} · {r.ket}</div>
           </div>
           <button onClick={() => tandaiGanti(r)} style={{ ...S.btn, ...S.btnSuccess, padding: '6px 10px', fontSize: '11px' }}>✓ Sudah diganti</button>
