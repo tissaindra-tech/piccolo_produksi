@@ -20,6 +20,17 @@ const kosongMetode = () => ({ tunai: '', kartu: '', transfer: '', qris: '', onli
 const tglID = (ymd) => { const [y, m, d] = ymd.split('-'); return `${d}/${m}/${y}` }
 const rp = (n) => Number(n || 0).toLocaleString('id-ID')
 
+// Kartu didefinisikan di luar komponen utama: kalau di dalam, React menganggapnya komponen baru tiap render
+// dan input di dalamnya kehilangan fokus setiap satu huruf diketik.
+function Kartu({ judul, children, warna }) {
+  return (
+    <div style={{ background: C.panel, border: `1px solid ${warna || C.border}`, borderRadius: '12px', padding: '12px 14px', marginBottom: '12px' }}>
+      <div style={{ fontSize: '13px', fontWeight: 700, marginBottom: '8px' }}>{judul}</div>
+      {children}
+    </div>
+  )
+}
+
 function BarisUang({ rows, setRows, denganSumber = false, placeholder }) {
   const ubah = (i, f, v) => setRows(rows.map((r, k) => k === i ? { ...r, [f]: v } : r))
   return (
@@ -183,12 +194,6 @@ export function PenjualanView({ showToast, userName, setUserName, loadData, role
   }
 
   const totalBulan = history.filter(h => bulanIni(h.tanggal) === bulanIni(formatTanggal())).reduce((s, h) => s + num(h.total_omzet), 0)
-  const Kartu = ({ judul, children, warna }) => (
-    <div style={{ background: C.panel, border: `1px solid ${warna || C.border}`, borderRadius: '12px', padding: '12px 14px', marginBottom: '12px' }}>
-      <div style={{ fontSize: '13px', fontWeight: 700, marginBottom: '8px' }}>{judul}</div>
-      {children}
-    </div>
-  )
 
   return (
     <div>
