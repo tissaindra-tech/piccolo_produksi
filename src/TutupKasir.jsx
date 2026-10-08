@@ -308,14 +308,14 @@ export function PenjualanView({ showToast, userName, setUserName, loadData, role
           <Kartu judul="4 · Pengeluaran dari dana lain (bukan laci kasir)">
             <div style={{ fontSize: '11px', color: C.text3, marginBottom: '6px' }}>BCA Tissa, ShopeePay Tissa, talangan Diandra/staff, transfer atau QRIS toko. Tidak mengurangi kas laci.</div>
             <div style={{ fontSize: '11px', color: C.sunDark, background: C.yellowBg, borderRadius: '8px', padding: '7px 10px', marginBottom: '8px', lineHeight: 1.45 }}>
-              💡 Satu belanja dibayar dari dua sumber? Buat dua baris dengan nama yang sama, misal "Lotte (talangan Diandra)" Rp 700.000 dan "Lotte (sisa, BCA Tissa)" Rp 150.000. Claude akan menggabungkannya jadi satu pembelian saat input ke Accurate.
+              💡 Satu nota dibayar dari dua sumber (misal Lotte 819.600: Diandra talangi, Tissa transfer 700.000 duluan)? Input lewat menu Nota → sumber "Ditalangi dulu" → isi "Sudah diganti 700.000". Sisanya otomatis muncul di sini sebagai yang harus diganti. Kalau diketik di sini, buat dua baris dengan nama sama; Claude menggabungkannya saat input ke Accurate.
             </div>
             {lainTercatat.length > 0 && (
               <div style={{ marginBottom: '8px' }}>
                 <div style={{ fontSize: '11px', color: C.text3, marginBottom: '4px' }}>Sudah tercatat hari ini:</div>
                 {lainTercatat.map(r => (
                   <div key={r.id} style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12.5px', padding: '4px 0', borderBottom: `1px dashed ${C.panel2}` }}>
-                    <span>• {r.keperluan} <span style={{ color: C.text3 }}>({sumberText(r)})</span></span><span>{formatRupiah(r.jumlah)}</span>
+                    <span>• {r.keperluan} <span style={{ color: C.text3 }}>({sumberText(r)}{r.sumber === 'talangan' && r.diganti > 0 ? `, sudah diganti ${formatRupiah(r.diganti)}, sisa ${formatRupiah(r.jumlah - r.diganti)}` : ''})</span></span><span>{formatRupiah(r.jumlah)}</span>
                   </div>
                 ))}
               </div>
