@@ -2,7 +2,7 @@
 // lalu request yang disetujui dipakai saat input nota (status jadi "dibeli").
 import { useState, useEffect } from 'react'
 import { supabase, generateId, formatTanggalID } from './supabase'
-import { C, S, Icon } from './shared'
+import { C, S, Icon, dibuatSendiri } from './shared'
 
 export const STATUS_REQ = {
   menunggu:  ['Menunggu owner', 'yellow'],
@@ -34,8 +34,8 @@ export function RequestBelanjaView({ bahanBaku = [], requests = [], setRequests,
   const ubahLokal = (id, patch) => setRequests && setRequests(prev => prev.map(x => x.id === id ? { ...x, ...patch } : x))
 
   // Barang yang bisa dibeli: mentah dan barang jadi (Indomie, susu kedelai botol).
-  // Prepack (ayam kremes, egg mayo, kuah bakso, french fries...) dibuat sendiri lewat menu Produksi, bukan di-request.
-  const mentah = bahanBaku.filter(b => b.is_active !== false && b.kategori !== 'prepack')
+  // Produksi & prepack (ayam kremes, egg mayo, kuah bakso, french fries...) dibuat sendiri lewat menu Produksi, bukan di-request.
+  const mentah = bahanBaku.filter(b => b.is_active !== false && !dibuatSendiri(b))
   const stokRendah = mentah.filter(b => Number(b.stok_saat_ini) < Number(b.stok_minimum)).slice(0, 8)
   const hasil = cari.trim()
     ? mentah.filter(b => b.nama.toLowerCase().includes(cari.toLowerCase()) && !rows.some(r => r.bahan_id === b.id)).slice(0, 8)

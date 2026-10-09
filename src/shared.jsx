@@ -120,6 +120,12 @@ export async function uploadFotoToStorage(file, folder, opts = {}) {
 // Kategori pengeluaran bukan-stok (kas kasir keluar & baris non-bahan di nota belanja)
 export const KATEGORI_BIAYA = ['Operasional', 'Transport / parkir', 'Konsumsi staff', 'Perbaikan / alat', 'Kebersihan', 'Perlengkapan (tisu, plastik, dll)', 'Lainnya']
 
+// Kategori bahan: mentah (dibeli), jadi (dibeli siap jual: Indomie, kaleng soda),
+// produksi (dimasak sendiri: ayam kremes, kuah bakso, egg mayo), prepack (hanya diporsi: french fries 150g, kentang burger 100g).
+// produksi & prepack sama-sama dibuat lewat menu Produksi dan tidak pernah di-request/dibeli.
+export const KATEGORI_LABEL = { mentah: 'Mentah', produksi: 'Produksi', prepack: 'Prepack', jadi: 'Jadi' }
+export const dibuatSendiri = (b) => b?.kategori === 'produksi' || b?.kategori === 'prepack'
+
 export const SUMBER_DANA_LABEL = {
   kas_kasir: 'Kas kasir',
   petty_cash: 'Petty cash',
