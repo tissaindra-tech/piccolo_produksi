@@ -130,5 +130,25 @@ export const SUMBER_DANA_LABEL = {
   shopeepay_tissa: 'ShopeePay Tissa',
 }
 
+// Satu nota bisa dibayar dari dua sumber (sumber_dana + sumber_dana_2 sebesar jumlah_sumber_2).
+// bagianSumber: berapa rupiah dari nota/catatan ini yang keluar dari sumber tertentu.
+export const bagianSumber = (r, sumber) => {
+  const total = Number(r?.total_harga ?? r?.jumlah) || 0
+  const j2 = r?.sumber_dana_2 ? Number(r?.jumlah_sumber_2) || 0 : 0
+  let x = 0
+  if (r?.sumber_dana === sumber) x += total - j2
+  if (r?.sumber_dana_2 === sumber) x += j2
+  return x
+}
+const rp = (n) => 'Rp ' + Math.round(Number(n) || 0).toLocaleString('id-ID')
+
 // Teks sumber dana + siapa yang menalangi (untuk rekap & riwayat)
-export const sumberText = (r) => (SUMBER_DANA_LABEL[r?.sumber_dana] || r?.sumber_dana || '') + (r?.dibayar_oleh ? ` oleh ${r.dibayar_oleh}` + (r.status_ganti === 'sudah' ? ' (sudah diganti)' : ' (belum diganti)') : '')
+export const sumberText = (r) => {
+  const l1 = SUMBER_DANA_LABEL[r?.sumber_dana] || r?.sumber_dana || ''
+  const talangan = r?.dibayar_oleh ? ` oleh ${r.dibayar_oleh}` + (r.status_ganti === 'sudah' ? ' (sudah diganti)' : ' (belum diganti)') : ''
+  const j2 = r?.sumber_dana_2 ? Number(r?.jumlah_sumber_2) || 0 : 0
+  if (!j2) return l1 + talangan
+  const total = Number(r?.total_harga ?? r?.jumlah) || 0
+  const l2 = SUMBER_DANA_LABEL[r.sumber_dana_2] || r.sumber_dana_2
+  return `${l1} ${rp(total - j2)}${talangan} + ${l2} ${rp(j2)}`
+}

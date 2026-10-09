@@ -89,13 +89,19 @@ export function PenjualanView({ showToast, userName, setUserName, loadData, role
       supabase.from('penjualan_harian').select('*').eq('tanggal', tgl).maybeSingle(),
       supabase.from('penjualan_harian').select('tanggal, kas_akhir').lt('tanggal', tgl).not('kas_akhir', 'is', null).order('tanggal', { ascending: false }).limit(1),
       supabase.from('pengeluaran_kasir').select('id, keperluan, jumlah, sumber_dana, dibayar_oleh, yang_input, dipindah_ke_belanja, cara_persetujuan').eq('tanggal', tgl).order('created_at'),
-      supabase.from('belanja').select('id, total_harga, sumber_dana, dibayar_oleh, jumlah_diganti, yang_belanja, items, status_baca').eq('tanggal', tgl).order('created_at'),
+      supabase.from('belanja').select('id, total_harga, sumber_dana, sumber_dana_2, jumlah_sumber_2, dibayar_oleh, jumlah_diganti, yang_belanja, items, status_baca').eq('tanggal', tgl).order('created_at'),
     ])
     const data = pj.data || null
     setExisting(data); setJustSaved(null)
     const rows = [
       ...(pk.data || []).filter(p => !p.dipindah_ke_belanja).map(p => ({ id: 'p' + p.id, keperluan: p.keperluan, jumlah: num(p.jumlah), sumber: p.sumber_dana, dibayar_oleh: p.dibayar_oleh, oleh: p.yang_input })),
-      ...(bl.data || []).map(b => ({ id: 'b' + b.id, keperluan: 'Belanja bahan' + (b.status_baca === 'menunggu' ? ' (nota menunggu dibaca)' : ': ' + (b.items || []).map(i => i.nama).join(', ').slice(0, 50)), jumlah: num(b.total_harga), sumber: b.sumber_dana, dibayar_oleh: b.dibayar_oleh, diganti: num(b.jumlah_diganti), oleh: b.yang_belanja })),
+      // Nota yang dibayar dari 2 sumber dipecah jadi 2 baris supaya bagian kas kasir terhitung benar
+      ...(bl.data || []).flatMap(b => {
+        const ket = 'Belanja bahan' + (b.status_baca === 'menunggu' ? ' (nota menunggu dibaca)' : ': ' + (b.items || []).map(i => i.nama).join(', ').slice(0, 50))
+        const j2 = b.sumber_dana_2 ? num(b.jumlah_sumber_2) : 0
+        const utama = { id: 'b' + b.id, keperluan: ket, jumlah: num(b.total_harga) - j2, sumber: b.sumber_dana, dibayar_oleh: b.dibayar_oleh, diganti: num(b.jumlah_diganti), oleh: b.yang_belanja }
+        return j2 > 0 ? [utama, { id: 'b' + b.id + '-2', keperluan: ket + ' (bagian sumber ke-2)', jumlah: j2, sumber: b.sumber_dana_2, dibayar_oleh: null, diganti: 0, oleh: b.yang_belanja }] : [utama]
+      }),
     ]
     setTercatat(rows)
     const prevRow = prev.data?.[0]

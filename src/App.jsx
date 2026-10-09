@@ -1,7 +1,7 @@
 import { useState, useEffect, useMemo, useRef } from 'react'
 import { supabase, generateId, formatTanggal, formatTanggalID, formatRupiah, daysFromNow } from './supabase'
 import * as XLSX from 'xlsx'
-import { C, S, Icon, uploadFotoToStorage, compressImage, salinKeDrive, setDriveContext, KATEGORI_BIAYA } from './shared'
+import { C, S, Icon, uploadFotoToStorage, compressImage, salinKeDrive, setDriveContext, KATEGORI_BIAYA, SUMBER_DANA_LABEL, sumberText } from './shared'
 import { kirimKeDrive } from './nota'
 import { RequestBelanjaView } from './Request'
 import { semuaFoto } from './Kasir'
@@ -2050,6 +2050,9 @@ function InputNotaView({ bahanBaku, showToast, loadData, logAudit, setView, user
   const [tanggal, setTanggal] = useState(formatTanggal())
   const [jalur, setJalur] = useState('kecil')
   const [sumberDana, setSumberDana] = useState('kas_kasir')
+  const [pakaiSumber2, setPakaiSumber2] = useState(false)   // nota dibayar dari dua sumber dana
+  const [sumberDana2, setSumberDana2] = useState('shopeepay_tissa')
+  const [jumlahSumber2, setJumlahSumber2] = useState('')
   const [dibayarOleh, setDibayarOleh] = useState('')
   const [digantiSebagian, setDigantiSebagian] = useState('')   // talangan: bagian yang sudah diganti owner
   const [sumberGanti, setSumberGanti] = useState('transfer_owner')
@@ -2224,6 +2227,12 @@ function InputNotaView({ bahanBaku, showToast, loadData, logAudit, setView, user
     if (fotoBelumDibaca && !(Number(totalNota) > 0)) { showToast('❌ Isi "Total di nota" dulu, supaya nota ini ikut terhitung di Rekap Harian'); return }
     if (fotoBelumDibaca && Number(totalNota) < totalBiayaLain) { showToast('❌ Total di nota lebih kecil dari jumlah baris bukan stok. Cek lagi angkanya'); return }
     const totalEfektif = fotoBelumDibaca ? Number(totalNota) : totalHarga
+    const j2 = pakaiSumber2 ? Number(jumlahSumber2) || 0 : 0
+    if (pakaiSumber2) {
+      if (sumberDana2 === sumberDana) { showToast('❌ Sumber dana kedua sama dengan yang pertama'); return }
+      if (!(j2 > 0)) { showToast('❌ Isi berapa rupiah yang dibayar dari sumber dana kedua'); return }
+      if (j2 >= totalEfektif) { showToast('❌ Bagian sumber kedua harus lebih kecil dari total nota'); return }
+    }
     if (jalur === 'kecil' && totalEfektif >= THRESHOLD_KECIL) {
       showToast(`❌ Belanja ≥ Rp ${THRESHOLD_KECIL.toLocaleString('id-ID')} pakai jalur Normal`); return
     }
@@ -2251,6 +2260,7 @@ function InputNotaView({ bahanBaku, showToast, loadData, logAudit, setView, user
       const ocrGabung = [driveInfo?.text || '', ...fotoExtra.map(f => f.text || '')].filter(Boolean).join('\n\n--- lembar berikutnya ---\n\n') || null
       const { error: belanjaErr } = await supabase.from('belanja').insert({
         id: newId, tanggal, jalur, sumber_dana: sumberDana,
+        sumber_dana_2: pakaiSumber2 ? sumberDana2 : null, jumlah_sumber_2: j2,
         dibayar_oleh: sumberDana === 'talangan' ? dibayarOleh.trim() : null,
         status_ganti: sumberDana === 'talangan' ? (Number(digantiSebagian) >= totalEfektif && totalEfektif > 0 ? 'sudah' : 'belum') : null,
         jumlah_diganti: sumberDana === 'talangan' ? Math.min(Number(digantiSebagian) || 0, totalEfektif || Number(digantiSebagian) || 0) : 0,
@@ -2301,11 +2311,12 @@ function InputNotaView({ bahanBaku, showToast, loadData, logAudit, setView, user
         })
       }
 
-      // Petty cash tracking jika sumber petty
-      if (sumberDana === 'petty_cash' && totalEfektif > 0) {
+      // Petty cash tracking jika sumber petty (hanya bagian yang memang keluar dari petty cash)
+      const dariPetty = (sumberDana === 'petty_cash' ? totalEfektif - j2 : 0) + (pakaiSumber2 && sumberDana2 === 'petty_cash' ? j2 : 0)
+      if (dariPetty > 0) {
         await supabase.from('petty_cash').insert({
           id: generateId(), tanggal, jenis: 'pengeluaran',
-          jumlah: -totalEfektif, saldo_setelah: 0,
+          jumlah: -dariPetty, saldo_setelah: 0,
           pemegang: 'staff', belanja_id: newId, yang_input: yangBelanja,
         })
       }
@@ -2433,6 +2444,22 @@ function InputNotaView({ bahanBaku, showToast, loadData, logAudit, setView, user
                 <option value="kas_kasir">dari kas kasir</option>
                 <option value="petty_cash">dari petty cash</option>
               </select>
+            </div>
+          </div>
+        )}
+        {!pakaiSumber2 ? (
+          <button onClick={() => setPakaiSumber2(true)} style={{ ...S.btn, marginTop: '6px', padding: '5px 10px', fontSize: '11px', background: 'transparent', color: C.text2, border: `1px dashed ${C.border}` }}>
+            + Dibayar dari 2 sumber dana (misal QRIS toko + ShopeePay)
+          </button>
+        ) : (
+          <div style={{ background: C.panel2, border: `1px solid ${C.border}`, borderRadius: '8px', padding: '8px 10px', marginTop: '6px' }}>
+            <div style={{ fontSize: '11px', color: C.text3, marginBottom: '6px' }}>Sumber kedua & berapa rupiah yang dibayar dari situ. Sisanya dihitung dari sumber pertama.</div>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr auto', gap: '6px', alignItems: 'center' }}>
+              <select value={sumberDana2} onChange={e => setSumberDana2(e.target.value)} style={{ ...S.input, padding: '8px', fontSize: '12px' }}>
+                {Object.entries(SUMBER_DANA_LABEL).filter(([k]) => k !== 'talangan' && k !== sumberDana).map(([k, l]) => <option key={k} value={k}>{l}</option>)}
+              </select>
+              <input type="number" inputMode="numeric" value={jumlahSumber2} onChange={e => setJumlahSumber2(e.target.value)} placeholder="Rp dari sumber ini" style={{ ...S.input, padding: '8px', fontSize: '12px' }} />
+              <button onClick={() => { setPakaiSumber2(false); setJumlahSumber2('') }} style={{ ...S.btn, ...S.btnDanger, padding: '8px 10px' }}>✕</button>
             </div>
           </div>
         )}
@@ -3810,6 +3837,8 @@ function HistoryBelanjaView({ belanja, showToast, loadData }) {
   const [editing, setEditing] = useState(false)
   const [editJalur, setEditJalur] = useState('')
   const [editSumber, setEditSumber] = useState('')
+  const [editSumber2, setEditSumber2] = useState('')      // '' = tidak ada sumber kedua
+  const [editJumlah2, setEditJumlah2] = useState('')
   const [editCatatan, setEditCatatan] = useState('')
   const [editItems, setEditItems] = useState([])
   const [saving, setSaving] = useState(false)
@@ -3842,6 +3871,7 @@ function HistoryBelanjaView({ belanja, showToast, loadData }) {
   const startEdit = (nota) => {
     setEditJalur(nota.jalur || 'kecil')
     setEditSumber(nota.sumber_dana || 'kas_kasir')
+    setEditSumber2(nota.sumber_dana_2 || ''); setEditJumlah2(nota.jumlah_sumber_2 ? String(nota.jumlah_sumber_2) : '')
     setEditCatatan(nota.catatan || '')
     setEditItems((nota.items || []).map(i => ({ ...i })))
     setEditing(true)
@@ -3858,10 +3888,13 @@ function HistoryBelanjaView({ belanja, showToast, loadData }) {
     setSaving(true)
     try {
       const cleanItems = editItems.map(i => ({ nama: i.nama.trim(), jumlah: Number(i.jumlah)||0, satuan: i.satuan||'', harga: Number(i.harga)||0 }))
-      await supabase.from('belanja').update({ jalur: editJalur, sumber_dana: editSumber, catatan: editCatatan, items: cleanItems, total_harga: totalEdit }).eq('id', selected.id)
+      const j2 = editSumber2 ? Number(editJumlah2) || 0 : 0
+      if (editSumber2 && (j2 <= 0 || j2 >= totalEdit)) { showToast('❌ Bagian sumber dana kedua harus di antara 0 dan total nota'); setSaving(false); return }
+      const patchSumber = { sumber_dana_2: editSumber2 || null, jumlah_sumber_2: j2 }
+      await supabase.from('belanja').update({ jalur: editJalur, sumber_dana: editSumber, catatan: editCatatan, items: cleanItems, total_harga: totalEdit, ...patchSumber }).eq('id', selected.id)
       showToast('✅ Nota berhasil diupdate')
       await loadData()
-      setSelected(prev => ({ ...prev, jalur: editJalur, sumber_dana: editSumber, catatan: editCatatan, items: cleanItems, total_harga: totalEdit }))
+      setSelected(prev => ({ ...prev, jalur: editJalur, sumber_dana: editSumber, catatan: editCatatan, items: cleanItems, total_harga: totalEdit, ...patchSumber }))
       setEditing(false)
     } catch (e) { showToast('❌ ' + e.message) }
     setSaving(false)
@@ -3923,6 +3956,14 @@ function HistoryBelanjaView({ belanja, showToast, loadData }) {
                 <option value="transfer">💳 Transfer</option>
                 <option value="pribadi">👤 Dana pribadi</option>
               </select>
+              <label style={S.label}>Sumber dana kedua (kalau nota dibayar dari 2 sumber)</label>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '6px', marginBottom: '10px' }}>
+                <select value={editSumber2} onChange={e => setEditSumber2(e.target.value)} style={S.input}>
+                  <option value="">— tidak ada —</option>
+                  {Object.entries(SUMBER_DANA_LABEL).filter(([k]) => k !== 'talangan' && k !== editSumber).map(([k, l]) => <option key={k} value={k}>{l}</option>)}
+                </select>
+                <input type="number" inputMode="numeric" value={editJumlah2} onChange={e => setEditJumlah2(e.target.value)} placeholder="Rp dari sumber kedua" disabled={!editSumber2} style={{ ...S.input, opacity: editSumber2 ? 1 : 0.5 }} />
+              </div>
               <label style={S.label}>Catatan</label>
               <textarea rows={2} value={editCatatan} onChange={e => setEditCatatan(e.target.value)} style={{ ...S.input, marginBottom: '4px' }} placeholder="Catatan tambahan..." />
             </div>
@@ -3966,7 +4007,7 @@ function HistoryBelanjaView({ belanja, showToast, loadData }) {
               </div>
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px', marginBottom: selected.catatan ? '10px' : '0' }}>
                 <div style={{ background: C.panel2, borderRadius: '8px', padding: '8px 10px' }}><div style={{ fontSize: '10px', color: C.text3 }}>Total belanja</div><div style={{ fontSize: '16px', fontWeight: 700, color: C.green }}>{formatRupiah(selected.total_harga)}</div></div>
-                <div style={{ background: C.panel2, borderRadius: '8px', padding: '8px 10px' }}><div style={{ fontSize: '10px', color: C.text3 }}>Sumber dana</div><div style={{ fontSize: '13px', fontWeight: 600, color: C.text }}>{selected.sumber_dana?.replace('_', ' ') || '-'}</div></div>
+                <div style={{ background: C.panel2, borderRadius: '8px', padding: '8px 10px' }}><div style={{ fontSize: '10px', color: C.text3 }}>Sumber dana</div><div style={{ fontSize: '13px', fontWeight: 600, color: C.text }}>{sumberText(selected) || '-'}</div></div>
               </div>
               {selected.catatan && <div style={{ fontSize: '12px', color: C.text3, fontStyle: 'italic' }}>📝 {selected.catatan}</div>}
             </div>
@@ -4515,6 +4556,8 @@ function BelanjaTabOwner({ belanja, showToast, loadData }) {
   const [editing, setEditing] = useState(false)
   const [editJalur, setEditJalur] = useState('')
   const [editSumber, setEditSumber] = useState('')
+  const [editSumber2, setEditSumber2] = useState('')      // '' = tidak ada sumber kedua
+  const [editJumlah2, setEditJumlah2] = useState('')
   const [editCatatan, setEditCatatan] = useState('')
   const [editItems, setEditItems] = useState([])
   const [saving, setSaving] = useState(false)
@@ -4546,6 +4589,7 @@ function BelanjaTabOwner({ belanja, showToast, loadData }) {
   const startEdit = (nota) => {
     setEditJalur(nota.jalur || 'kecil')
     setEditSumber(nota.sumber_dana || 'kas_kasir')
+    setEditSumber2(nota.sumber_dana_2 || ''); setEditJumlah2(nota.jumlah_sumber_2 ? String(nota.jumlah_sumber_2) : '')
     setEditCatatan(nota.catatan || '')
     setEditItems((nota.items || []).map(i => ({ ...i })))
     setEditing(true)
@@ -4562,10 +4606,13 @@ function BelanjaTabOwner({ belanja, showToast, loadData }) {
     setSaving(true)
     try {
       const cleanItems = editItems.map(i => ({ nama: i.nama.trim(), jumlah: Number(i.jumlah)||0, satuan: i.satuan||'', harga: Number(i.harga)||0 }))
-      await supabase.from('belanja').update({ jalur: editJalur, sumber_dana: editSumber, catatan: editCatatan, items: cleanItems, total_harga: totalEdit }).eq('id', selected.id)
+      const j2 = editSumber2 ? Number(editJumlah2) || 0 : 0
+      if (editSumber2 && (j2 <= 0 || j2 >= totalEdit)) { showToast('❌ Bagian sumber dana kedua harus di antara 0 dan total nota'); setSaving(false); return }
+      const patchSumber = { sumber_dana_2: editSumber2 || null, jumlah_sumber_2: j2 }
+      await supabase.from('belanja').update({ jalur: editJalur, sumber_dana: editSumber, catatan: editCatatan, items: cleanItems, total_harga: totalEdit, ...patchSumber }).eq('id', selected.id)
       showToast('✅ Nota berhasil diupdate')
       if (loadData) await loadData()
-      setSelected(prev => ({ ...prev, jalur: editJalur, sumber_dana: editSumber, catatan: editCatatan, items: cleanItems, total_harga: totalEdit }))
+      setSelected(prev => ({ ...prev, jalur: editJalur, sumber_dana: editSumber, catatan: editCatatan, items: cleanItems, total_harga: totalEdit, ...patchSumber }))
       setEditing(false)
     } catch (e) { showToast('❌ ' + e.message) }
     setSaving(false)
@@ -4626,6 +4673,14 @@ function BelanjaTabOwner({ belanja, showToast, loadData }) {
                 <option value="transfer">💳 Transfer</option>
                 <option value="pribadi">👤 Dana pribadi</option>
               </select>
+              <label style={S.label}>Sumber dana kedua (kalau nota dibayar dari 2 sumber)</label>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '6px', marginBottom: '10px' }}>
+                <select value={editSumber2} onChange={e => setEditSumber2(e.target.value)} style={S.input}>
+                  <option value="">— tidak ada —</option>
+                  {Object.entries(SUMBER_DANA_LABEL).filter(([k]) => k !== 'talangan' && k !== editSumber).map(([k, l]) => <option key={k} value={k}>{l}</option>)}
+                </select>
+                <input type="number" inputMode="numeric" value={editJumlah2} onChange={e => setEditJumlah2(e.target.value)} placeholder="Rp dari sumber kedua" disabled={!editSumber2} style={{ ...S.input, opacity: editSumber2 ? 1 : 0.5 }} />
+              </div>
               <label style={S.label}>Catatan</label>
               <textarea rows={2} value={editCatatan} onChange={e => setEditCatatan(e.target.value)} style={{ ...S.input, marginBottom: '4px' }} placeholder="Catatan tambahan..." />
             </div>
@@ -4668,7 +4723,7 @@ function BelanjaTabOwner({ belanja, showToast, loadData }) {
               </div>
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px', marginBottom: selected.catatan ? '8px' : '0' }}>
                 <div style={{ background: C.panel2, borderRadius: '7px', padding: '7px 10px' }}><div style={{ fontSize: '10px', color: C.text3 }}>Total</div><div style={{ fontSize: '15px', fontWeight: 700, color: C.green }}>{formatRupiah(selected.total_harga)}</div></div>
-                <div style={{ background: C.panel2, borderRadius: '7px', padding: '7px 10px' }}><div style={{ fontSize: '10px', color: C.text3 }}>Sumber dana</div><div style={{ fontSize: '12px', fontWeight: 600 }}>{selected.sumber_dana?.replace('_', ' ') || '-'}</div></div>
+                <div style={{ background: C.panel2, borderRadius: '7px', padding: '7px 10px' }}><div style={{ fontSize: '10px', color: C.text3 }}>Sumber dana</div><div style={{ fontSize: '12px', fontWeight: 600 }}>{sumberText(selected) || '-'}</div></div>
               </div>
               {selected.catatan && <div style={{ fontSize: '12px', color: C.text3, fontStyle: 'italic' }}>📝 {selected.catatan}</div>}
             </div>

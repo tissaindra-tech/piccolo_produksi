@@ -7,7 +7,7 @@
 import { useState, useEffect, useMemo } from 'react'
 import * as XLSX from 'xlsx'
 import { supabase, generateId, formatTanggal, formatTanggalID, formatRupiah } from './supabase'
-import { C, S, uploadFotoToStorage, SUMBER_DANA_LABEL, sumberText, KATEGORI_BIAYA } from './shared'
+import { C, S, uploadFotoToStorage, SUMBER_DANA_LABEL, sumberText, KATEGORI_BIAYA, bagianSumber } from './shared'
 
 const BELANJA_BAHAN = 'Belanja bahan (stok)'
 const CARA_PERSETUJUAN = ['WA', 'Telepon', 'Lisan']
@@ -160,14 +160,14 @@ export function PengeluaranKasirView({ showToast, userName, setUserName, loadDat
   const loadList = async () => {
     const [pk, bl] = await Promise.all([
       supabase.from('pengeluaran_kasir').select('*').order('tanggal', { ascending: false }).order('created_at', { ascending: false }).limit(100),
-      supabase.from('belanja').select('id, tanggal, total_harga, sumber_dana, dibayar_oleh, yang_belanja, foto_nota, foto_tambahan, items, status_baca, catatan, created_at').order('created_at', { ascending: false }).limit(100),
+      supabase.from('belanja').select('id, tanggal, total_harga, sumber_dana, sumber_dana_2, jumlah_sumber_2, dibayar_oleh, yang_belanja, foto_nota, foto_tambahan, items, status_baca, catatan, created_at').order('created_at', { ascending: false }).limit(100),
     ])
     // Belanja bahan juga uang keluar laci, tampilkan di riwayat yang sama supaya laporan kas keluar lengkap
     const dipindah = new Set((pk.data || []).map(p => p.dipindah_ke_belanja).filter(Boolean))
     const belanjaRows = (bl.data || []).filter(b => !dipindah.has(b.id)).map(b => ({
       id: 'b-' + b.id, _belanja: true, tanggal: b.tanggal, jumlah: b.total_harga, kategori: BELANJA_BAHAN,
       keperluan: b.status_baca === 'menunggu' ? 'Belanja bahan — nota menunggu dibaca' : 'Belanja bahan — ' + ((b.items || []).map(i => i.nama).join(', ').slice(0, 60) || 'tanpa rincian'),
-      sumber_dana: b.sumber_dana, dibayar_oleh: b.dibayar_oleh, yang_input: b.yang_belanja, ada_nota: !!b.foto_nota, foto: b.foto_nota, foto_tambahan: b.foto_tambahan, catatan: b.catatan, created_at: b.created_at,
+      sumber_dana: b.sumber_dana, sumber_dana_2: b.sumber_dana_2, jumlah_sumber_2: b.jumlah_sumber_2, total_harga: b.total_harga, dibayar_oleh: b.dibayar_oleh, yang_input: b.yang_belanja, ada_nota: !!b.foto_nota, foto: b.foto_nota, foto_tambahan: b.foto_tambahan, catatan: b.catatan, created_at: b.created_at,
     }))
     setList([...(pk.data || []), ...belanjaRows].sort((a, b) => (b.tanggal + (b.created_at || '')).localeCompare(a.tanggal + (a.created_at || ''))))
   }
@@ -379,7 +379,7 @@ export function RekapHarianView({ bahanBaku, showToast, setView }) {
   const notaTanpaTotal = belanja.filter(b => !num(b.total_harga)).length
   const totalPengeluaran = pengeluaran.reduce((s, p) => s + num(p.jumlah), 0)
   const nilaiWaste = waste.reduce((s, w) => s + num(w.jumlah) * num(bahanById[w.bahan_id]?.harga_per_satuan), 0)
-  const belanjaKas = belanja.filter(b => b.sumber_dana === 'kas_kasir').reduce((s, b) => s + num(b.total_harga), 0)
+  const belanjaKas = belanja.reduce((s, b) => s + bagianSumber(b, 'kas_kasir'), 0)   // hanya bagian yang keluar dari laci kasir
   const pengeluaranKas = pengeluaran.filter(p => p.sumber_dana === 'kas_kasir').reduce((s, p) => s + num(p.jumlah), 0)
   const kasTunaiBersih = num(penjualan?.tunai) - belanjaKas - pengeluaranKas
 
