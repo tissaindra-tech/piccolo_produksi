@@ -100,6 +100,34 @@ export function RequestBelanjaView({ bahanBaku = [], requests = [], setRequests,
     if (!setRequests && loadData) loadData()
   }
 
+  // Tandai request yang sudah disetujui sebagai "sudah dibeli" langsung dari sini,
+  // untuk belanja tanpa nota atau nota yang mencakup banyak request sekaligus.
+  const tandaiDibeli = async (r) => {
+    if (sibuk[r.id]) return
+    setSibuk(p => ({ ...p, [r.id]: true }))
+    const { error } = await supabase.from('request_belanja').update({ status: 'dibeli' }).eq('id', r.id)
+    setSibuk(p => { const n = { ...p }; delete n[r.id]; return n })
+    if (error) { showToast('❌ ' + error.message); return }
+    ubahLokal(r.id, { status: 'dibeli' })
+    if (logAudit) logAudit('request_belanja', r.id, 'update', 'disetujui', 'dibeli', { oleh: userName })
+    showToast('✅ Ditandai sudah dibeli')
+    if (!setRequests && loadData) loadData()
+  }
+  const [sibukSemua, setSibukSemua] = useState(false)
+  const tandaiSemuaDibeli = async () => {
+    const ids = requests.filter(r => r.status === 'disetujui').map(r => r.id)
+    if (ids.length === 0 || sibukSemua) return
+    if (!window.confirm(`Tandai ${ids.length} request yang disetujui sebagai sudah dibeli?`)) return
+    setSibukSemua(true)
+    const { error } = await supabase.from('request_belanja').update({ status: 'dibeli' }).in('id', ids)
+    setSibukSemua(false)
+    if (error) { showToast('❌ ' + error.message); return }
+    setRequests && setRequests(prev => prev.map(x => ids.includes(x.id) ? { ...x, status: 'dibeli' } : x))
+    if (logAudit) logAudit('request_belanja', ids.join(','), 'update', 'disetujui', 'dibeli', { jumlah: ids.length, oleh: userName })
+    showToast(`✅ ${ids.length} request ditandai sudah dibeli`)
+    if (!setRequests && loadData) loadData()
+  }
+
   const daftar = requests.filter(r => {
     if (filter === 'semua') return true
     if (filter === 'saya') return r.dibuat_oleh === userName
@@ -184,6 +212,11 @@ export function RequestBelanjaView({ bahanBaku = [], requests = [], setRequests,
         {!isOwner && chip('saya', 'Punya saya')}
         {chip('semua', 'Semua')}
       </div>
+      {filter === 'disetujui' && nSiap > 1 && (
+        <button onClick={tandaiSemuaDibeli} disabled={sibukSemua} style={{ ...S.btn, width: '100%', padding: '9px', fontSize: '12px', marginBottom: '10px', background: C.greenLightBg, color: C.greenLight, border: `1px solid ${C.greenLightBorder}`, opacity: sibukSemua ? 0.6 : 1 }}>
+          {sibukSemua ? 'Menyimpan...' : `✓ Tandai semua ${nSiap} request sudah dibeli`}
+        </button>
+      )}
       {daftar.length === 0 && <div style={{ textAlign: 'center', padding: '20px', color: C.text3, fontSize: '13px' }}>Tidak ada request di sini</div>}
       {daftar.map(r => (
         <div key={r.id} style={{ background: C.panel, border: `1px solid ${r.status === 'menunggu' ? C.yellowBorder : C.border}`, borderRadius: '12px', padding: '12px 14px', marginBottom: '8px' }}>
@@ -216,8 +249,13 @@ export function RequestBelanjaView({ bahanBaku = [], requests = [], setRequests,
           {!isOwner && r.status === 'menunggu' && r.dibuat_oleh === userName && (
             <button onClick={() => batalkan(r)} disabled={!!sibuk[r.id]} style={{ ...S.btn, background: 'transparent', color: C.text3, border: `1px dashed ${C.border}`, padding: '6px 10px', fontSize: '11px', marginTop: '8px', opacity: sibuk[r.id] ? 0.6 : 1 }}>{sibuk[r.id] ? 'Membatalkan...' : 'Batalkan request'}</button>
           )}
-          {!isOwner && r.status === 'disetujui' && (
-            <button onClick={() => setView('inputnota')} style={{ ...S.btn, ...S.btnPrimary, padding: '8px 12px', fontSize: '12px', marginTop: '8px' }}>Sudah dibeli? Input nota →</button>
+          {r.status === 'disetujui' && (
+            <div style={{ display: 'flex', gap: '6px', marginTop: '8px' }}>
+              <button onClick={() => tandaiDibeli(r)} disabled={!!sibuk[r.id]} style={{ ...S.btn, ...S.btnSuccess, flex: 1, padding: '8px 12px', fontSize: '12px', opacity: sibuk[r.id] ? 0.6 : 1 }}>
+                {sibuk[r.id] ? 'Menyimpan...' : '✓ Tandai sudah dibeli'}
+              </button>
+              {!isOwner && <button onClick={() => setView('inputnota')} style={{ ...S.btn, ...S.btnPrimary, padding: '8px 12px', fontSize: '12px' }}>Input nota →</button>}
+            </div>
           )}
         </div>
       ))}
