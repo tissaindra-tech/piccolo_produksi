@@ -2217,9 +2217,13 @@ function InputNotaView({ bahanBaku, showToast, loadData, logAudit, setView, user
     const validItems = items.filter(i => i.bahan_id && i.jumlah && i.harga)
     const biayaValid = biayaLain.filter(x => x.keterangan.trim() && Number(x.harga) > 0)
     const fotoSaja = mode === 'foto' && validItems.length === 0 && biayaValid.length === 0
+    // Mode foto tanpa satu pun barang stok (hanya foto, atau foto + baris bukan stok): barang stoknya
+    // dibaca Claude pada tugas pagi, jadi statusnya harus "menunggu" dan total nota wajib diisi manual.
+    const fotoBelumDibaca = mode === 'foto' && validItems.length === 0
     if (!fotoSaja && validItems.length === 0 && biayaValid.length === 0) { showToast('❌ Minimal 1 barang atau 1 biaya'); return }
-    if (fotoSaja && !(Number(totalNota) > 0)) { showToast('❌ Isi "Total di nota" dulu, supaya nota ini ikut terhitung di Rekap Harian'); return }
-    const totalEfektif = fotoSaja ? (Number(totalNota) || 0) : totalHarga
+    if (fotoBelumDibaca && !(Number(totalNota) > 0)) { showToast('❌ Isi "Total di nota" dulu, supaya nota ini ikut terhitung di Rekap Harian'); return }
+    if (fotoBelumDibaca && Number(totalNota) < totalBiayaLain) { showToast('❌ Total di nota lebih kecil dari jumlah baris bukan stok. Cek lagi angkanya'); return }
+    const totalEfektif = fotoBelumDibaca ? Number(totalNota) : totalHarga
     if (jalur === 'kecil' && totalEfektif >= THRESHOLD_KECIL) {
       showToast(`❌ Belanja ≥ Rp ${THRESHOLD_KECIL.toLocaleString('id-ID')} pakai jalur Normal`); return
     }
@@ -2253,7 +2257,7 @@ function InputNotaView({ bahanBaku, showToast, loadData, logAudit, setView, user
         sumber_ganti: sumberDana === 'talangan' && Number(digantiSebagian) > 0 ? sumberGanti : null,
         total_harga: totalEfektif, yang_belanja: yangBelanja,
         foto_nota: fotoUrl, catatan, items: itemsWithName, created_by: yangBelanja,
-        status_baca: fotoSaja ? 'menunggu' : 'selesai',
+        status_baca: fotoBelumDibaca ? 'menunggu' : 'selesai',
         ocr_text: ocrGabung, foto_drive: driveInfo?.fileUrl || null, foto_tambahan: fotoTambahan,
         biaya_lain: biayaValid.map(x => ({ keterangan: x.keterangan.trim(), kategori: x.kategori, harga: Number(x.harga) })),
       })
@@ -2309,7 +2313,7 @@ function InputNotaView({ bahanBaku, showToast, loadData, logAudit, setView, user
       if (requestIds.length) {
         await supabase.from('request_belanja').update({ status: 'dibeli', belanja_id: newId }).in('id', requestIds)
       }
-      showToast(fotoSaja ? '✅ Foto nota tersimpan. Barang & stok diisi Claude pada tugas pagi.' : '✅ Nota tersimpan, stok auto-update')
+      showToast(fotoBelumDibaca ? '✅ Nota tersimpan. Barang stok di foto diisi Claude pada tugas pagi.' : '✅ Nota tersimpan, stok auto-update')
       loadData()
       setView('home')
     } catch (e) { showToast('❌ ' + e.message) }
@@ -2465,14 +2469,17 @@ function InputNotaView({ bahanBaku, showToast, loadData, logAudit, setView, user
 
       {mode === 'foto' && fotoBlock}
 
-      {mode === 'foto' && !aiResult && !isiBarang && (
+      {mode === 'foto' && !aiResult && !items.some(i => i.bahan_id && i.jumlah && i.harga) && (
         <div style={{ background: C.panel, border: `1px solid ${C.border}`, borderRadius: '12px', padding: '12px 14px', marginBottom: '12px' }}>
           <FormRow label="Total di nota (Rp) — wajib, lihat angka total di nota / bukti bayar">
             <input type="number" inputMode="numeric" value={totalNota} onChange={e => setTotalNota(e.target.value)} placeholder="misal 1046800" style={S.input} />
           </FormRow>
-          <button onClick={() => setIsiBarang(true)} style={{ ...S.btn, background: 'transparent', border: `1px dashed ${C.border}`, color: C.text2, width: '100%', fontSize: '12px' }}>
-            ✍️ Saya mau isi barangnya sendiri sekarang
-          </button>
+          {fotoExtra.length > 0 && <div style={{ fontSize: '10.5px', color: C.text3, marginTop: '-4px', marginBottom: '8px' }}>Ada {fotoExtra.length + 1} foto di nota ini: isi jumlah total semua lembarnya.</div>}
+          {!isiBarang && (
+            <button onClick={() => setIsiBarang(true)} style={{ ...S.btn, background: 'transparent', border: `1px dashed ${C.border}`, color: C.text2, width: '100%', fontSize: '12px' }}>
+              ✍️ Saya mau isi barangnya sendiri sekarang
+            </button>
+          )}
         </div>
       )}
 
