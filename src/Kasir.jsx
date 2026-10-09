@@ -225,7 +225,7 @@ export function PengeluaranKasirView({ showToast, userName, setUserName, loadDat
   return (
     <div>
       <h2 style={{ fontSize: '17px', fontWeight: 600, marginBottom: '2px' }}>💸 Pengeluaran Kas Kasir</h2>
-      <p style={{ fontSize: '12px', color: C.text3, marginBottom: '12px' }}>Semua uang yang keluar dari laci kasir / petty cash: belanja bahan, parkir, galon, ongkir, konsumsi staff. Cukup isi jumlah, untuk apa, dan foto notanya. Kategori dan isi nota diurus Claude saat input ke Accurate.</p>
+      <p style={{ fontSize: '12px', color: C.text3, marginBottom: '12px' }}>Semua uang yang keluar dari kas kasir atau petty cash: belanja bahan, parkir, galon, ongkir, konsumsi staff. Cukup isi jumlah, untuk apa, dan foto notanya. Kategori dan isi nota diurus Claude saat input ke Accurate.</p>
 
       <Tabs value={tab} onChange={setTab} items={[['catat', '📝 Catat'], ['riwayat', `📅 Riwayat (${listBulan.length})`]]} />
 
@@ -283,10 +283,10 @@ export function PengeluaranKasirView({ showToast, userName, setUserName, loadDat
             <input type="checkbox" id="ada-nota" checked={adaNota} onChange={e => setAdaNota(e.target.checked)} />
             <label htmlFor="ada-nota" style={{ fontSize: '12px', cursor: 'pointer' }}>Ada nota / struk fisik</label>
           </div>
-          <FotoMultiInput label={adaNota ? 'Foto nota * (boleh beberapa)' : 'Foto bukti (opsional, misal nota atau screenshot WA persetujuan)'} fotos={fotos} showToast={showToast}
+          <FotoMultiInput label={adaNota ? 'Foto nota * (boleh beberapa)' : 'Foto bukti (boleh kosong, misal nota atau screenshot WA persetujuan)'} fotos={fotos} showToast={showToast}
             onAdd={list => setFotos(prev => [...prev, ...list])} onRemove={i => setFotos(prev => prev.filter((_, k) => k !== i))} />
 
-          <FormRow label="Catatan (opsional)">
+          <FormRow label="Catatan (boleh kosong)">
             <input value={catatan} onChange={e => setCatatan(e.target.value)} style={S.input} />
           </FormRow>
           <FormRow label="Yang input *">

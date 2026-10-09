@@ -166,7 +166,7 @@ export function PenjualanView({ showToast, userName, setUserName, loadData, role
   const handleSave = async () => {
     if (!yangInput.trim()) { showToast('❌ Isi nama yang input'); return }
     if (!totalOmzet) { showToast('❌ Isi penerimaan hari ini (minimal tunai atau EDC)'); return }
-    if (kasAwal === '') { showToast('❌ Isi kas kemarin (sisa kas laci)'); return }
+    if (kasAwal === '') { showToast('❌ Isi kas kemarin (sisa kas kasir)'); return }
     const barisKasValid = barisKas.filter(r => r.keperluan.trim() && num(r.jumlah) > 0)
     const barisLainValid = barisLain.filter(r => r.keperluan.trim() && num(r.jumlah) > 0)
     if (barisLainValid.some(r => r.sumber === 'talangan' && !(r.dibayar_oleh || '').trim())) { showToast('❌ Isi siapa yang menalangi'); return }
@@ -210,7 +210,7 @@ export function PenjualanView({ showToast, userName, setUserName, loadData, role
   return (
     <div>
       <h2 style={{ fontSize: '17px', fontWeight: 600, marginBottom: '2px' }}>💰 Laporan Tutup Kasir</h2>
-      <p style={{ fontSize: '12px', color: C.text3, marginBottom: '12px' }}>Urutannya sama seperti laporan di WA: penerimaan, kas laci, pengeluaran. Sekali sehari setelah tutup.</p>
+      <p style={{ fontSize: '12px', color: C.text3, marginBottom: '12px' }}>Urutannya sama seperti laporan di WA: penerimaan, kas kasir, pengeluaran. Sekali sehari setelah tutup.</p>
 
       {isOwner && <Tabs value={tab} onChange={setTab} items={[['input', '📝 Input'], ['history', `📅 Riwayat (${history.length})`]]} />}
 
@@ -263,7 +263,7 @@ export function PenjualanView({ showToast, userName, setUserName, loadData, role
               <strong style={{ fontSize: '18px', color: C.green }}>{formatRupiah(totalOmzet)}</strong>
             </div>
             <div style={{ marginTop: '8px' }}>
-              <label style={S.label}>Jumlah transaksi / struk (opsional)</label>
+              <label style={S.label}>Jumlah transaksi / struk (boleh kosong)</label>
               <input type="number" inputMode="numeric" value={jumlahTrx} onChange={e => setJumlahTrx(e.target.value)} placeholder="misal: 3" style={S.input} />
             </div>
           </Kartu>
@@ -286,15 +286,15 @@ export function PenjualanView({ showToast, userName, setUserName, loadData, role
             </div>
           </Kartu>
 
-          <Kartu judul="3 · Kas laci" warna={C.sun}>
+          <Kartu judul="3 · Kas kasir" warna={C.sun}>
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' }}>
               <div>
-                <label style={S.label}>Kas kemarin (sisa laci)</label>
+                <label style={S.label}>Kas kemarin (sisa kas kasir)</label>
                 <RupiahInput value={kasAwal} onChange={setKasAwal} />
                 {kasAwalAsal && <div style={{ fontSize: '10px', color: C.text3, marginTop: '2px' }}>{kasAwalAsal}</div>}
               </div>
               <div>
-                <label style={S.label}>Kas fisik dihitung (opsional)</label>
+                <label style={S.label}>Kas fisik dihitung (boleh kosong)</label>
                 <RupiahInput value={kasFisik} onChange={setKasFisik} />
               </div>
             </div>
@@ -311,8 +311,8 @@ export function PenjualanView({ showToast, userName, setUserName, loadData, role
             </div>
           </Kartu>
 
-          <Kartu judul="4 · Pengeluaran dari dana lain (bukan laci kasir)">
-            <div style={{ fontSize: '11px', color: C.text3, marginBottom: '6px' }}>BCA Tissa, ShopeePay Tissa, talangan Diandra/staff, transfer atau QRIS toko. Tidak mengurangi kas laci.</div>
+          <Kartu judul="4 · Pengeluaran dari dana lain (bukan kas kasir)">
+            <div style={{ fontSize: '11px', color: C.text3, marginBottom: '6px' }}>BCA Tissa, ShopeePay Tissa, talangan Diandra/staff, transfer atau QRIS toko. Tidak mengurangi kas kasir.</div>
             <div style={{ fontSize: '11px', color: C.sunDark, background: C.yellowBg, borderRadius: '8px', padding: '7px 10px', marginBottom: '8px', lineHeight: 1.45 }}>
               💡 Satu nota dibayar dari dua sumber (misal Lotte 819.600: Diandra talangi, Tissa transfer 700.000 duluan)? Input lewat menu Nota → sumber "Ditalangi dulu" → isi "Sudah diganti 700.000". Sisanya otomatis muncul di sini sebagai yang harus diganti. Kalau diketik di sini, buat dua baris dengan nama sama; Claude menggabungkannya saat input ke Accurate.
             </div>
@@ -338,7 +338,7 @@ export function PenjualanView({ showToast, userName, setUserName, loadData, role
               onFile={(file, b64) => { setFotoEdcFile(file); setFotoEdc(b64) }} onClear={() => { setFotoEdcFile(null); setFotoEdc('') }} />
           </Kartu>
 
-          <FormRow label="Catatan (opsional)">
+          <FormRow label="Catatan (boleh kosong)">
             <textarea value={catatan} onChange={e => setCatatan(e.target.value)} rows={2} placeholder="Hujan, ramai event, void 1 struk, dll" style={{ ...S.input, resize: 'vertical' }} />
           </FormRow>
           <FormRow label="Yang input *">

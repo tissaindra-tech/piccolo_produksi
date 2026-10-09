@@ -3,7 +3,7 @@
 import { useState } from 'react'
 import { C, S } from './shared'
 
-const ATURAN_EMAS = [
+const ATURAN_WAJIB = [
   ['⚖️', 'Jumlah selalu dalam satuan terkecil: gram, ml, atau pcs. Beli 2 botol × 1000 ml, tulis 2000.'],
   ['🗑️', 'Waste hanya barang yang benar-benar dibuang. Kalau stok turun karena dipakai masak, pilih "Tidak ada".'],
   ['📷', 'Ragu isi barangnya? Cukup foto nota dan isi totalnya. Claude membaca barangnya tiap pagi.'],
@@ -43,8 +43,9 @@ const KARTU = {
         'Buka Produksi. Pilih Divisi (Kitchen / Bar) dan "Produk yang dibuat".',
         'Isi bahan yang dipakai beserta jumlahnya. Resep biasanya sudah terisi, tinggal sesuaikan.',
         'Isi "Hasil produksi": berapa pcs/gram jadi, dan berapa porsi.',
-        'Status "Selesai" kalau sudah jadi. "Proses" kalau masih dimasak, nanti diubah di Lap. Produksi.',
+        'Status "Selesai" kalau sudah jadi. "Proses" kalau masih dimasak, nanti diubah di tab Riwayat.',
         'Isi nama yang masak, lalu Simpan.',
+        'Mau lihat yang sudah dimasak? Tap tab "Riwayat" di atas form.',
       ],
       catatan: 'Begitu Selesai: stok bahan berkurang, stok produk bertambah, dan COGS per porsi terhitung otomatis.',
     },
@@ -67,7 +68,7 @@ const KARTU = {
       catatan: 'Stok otomatis berkurang. Kalau salah input, owner bisa menghapusnya dari riwayat Waste.',
     },
     {
-      judul: 'Uang laci keluar (parkir, galon, ongkir, konsumsi staff)', kapan: 'Setiap uang kasir dipakai, hari itu juga.', view: 'pengeluaran', tombol: 'Buka Kas Keluar',
+      judul: 'Uang kasir keluar (parkir, galon, ongkir, konsumsi staff)', kapan: 'Setiap uang kasir dipakai, hari itu juga.', view: 'pengeluaran', tombol: 'Buka Kas Keluar',
       langkah: [
         'Buka Kas Keluar. Isi jumlah dan "untuk apa".',
         'Pilih sumber uang (kas kasir, petty cash, ditalangi).',
@@ -83,7 +84,7 @@ const KARTU = {
         'Buka Tutup Kasir. Isi penerimaan per metode: tunai, QRIS, EDC, transfer, sesuai laporan POS.',
         'Foto layar rekap POS dan settlement EDC.',
         'Cek daftar "Sudah tercatat di aplikasi hari ini". Yang belum tercatat, tambahkan nama barang dan nominalnya.',
-        'Isi kas kemarin (sisa laci) dan kas fisik yang dihitung.',
+        'Isi kas kemarin (sisa kas kasir) dan kas fisik yang dihitung.',
         'Simpan, lalu "Salin teks laporan" dan kirim ke grup WA.',
       ],
       catatan: 'Sudah masuk tidak bisa diubah kasir. Kalau salah, minta owner.',
@@ -112,7 +113,7 @@ const KARTU = {
     {
       judul: 'Review bulanan produksi dan COGS', kapan: 'Awal bulan, untuk bulan sebelumnya.', view: 'histproduksi', tombol: 'Buka Lap. Produksi',
       langkah: [
-        'Buka Lainnya → Lap. Produksi, pilih bulan.',
+        'Buka Lainnya → Lap. Produksi (atau tab Riwayat di Produksi), pilih bulan.',
         'Lihat ringkasan per menu: batch, hasil, porsi, COGS, dan COGS per porsi.',
         'Tap "Excel": sheet Ringkasan, Pemakaian Bahan (dengan kode Accurate), dan Per Batch.',
       ],
@@ -160,8 +161,8 @@ export function PanduanView({ role, setView, bisaPenjualan }) {
       </div>
 
       <div style={{ background: C.yellowBg, border: `1px solid ${C.yellowBorder}`, borderRadius: '12px', padding: '10px 12px', marginBottom: '12px' }}>
-        <div style={{ fontSize: '12px', fontWeight: 700, color: C.yellow, marginBottom: '6px' }}>Aturan emas</div>
-        {ATURAN_EMAS.map(([ik, t]) => (
+        <div style={{ fontSize: '12px', fontWeight: 700, color: C.yellow, marginBottom: '6px' }}>Aturan wajib</div>
+        {ATURAN_WAJIB.map(([ik, t]) => (
           <div key={t} style={{ display: 'flex', gap: '8px', fontSize: '12px', color: C.text, marginBottom: '4px' }}><span>{ik}</span><span>{t}</span></div>
         ))}
       </div>

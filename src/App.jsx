@@ -691,7 +691,7 @@ function AppShell(props) {
     // Staff: Home · Stok · Produksi · Request di menu bawah; sisanya di "Lainnya".
     // Update Stok juga bisa dibuka dari tombol di Home. Riwayat belanja tidak dipakai staff.
     // Kas Keluar hanya untuk staff yang ditunjuk jadi kasir (bisa tutup kasir). Riwayat belanja staff tanpa harga.
-    : ['home', 'stoklist', 'produksi', 'request', 'closing', ...(bisaPenjualan ? ['penjualan', 'pengeluaran'] : []), 'inputnota', 'historybelanja', 'waste', 'histproduksi', 'resep', 'panduan']
+    : ['home', 'stoklist', 'produksi', 'request', 'closing', ...(bisaPenjualan ? ['penjualan', 'pengeluaran'] : []), 'inputnota', 'historybelanja', 'waste', 'resep', 'panduan']
   const primary = allMenus.slice(0, 4)               // 4 ikon di menu bawah + "Lainnya"
   const more = allMenus.slice(4)
   const go = (id) => { setView(id); setMoreOpen(false); window.scrollTo({ top: 0 }) }
@@ -1423,7 +1423,8 @@ function SearchableSelect({ options, value, onChange, placeholder, showStock = f
 // =====================================================
 // PRODUKSI VIEW — Mentah → Prepack
 // =====================================================
-function ProduksiView({ bahanBaku, showToast, loadData, logAudit, setView, userName, setUserName, isLocked }) {
+function ProduksiView({ bahanBaku, produksi, showToast, loadData, logAudit, setView, userName, setUserName, isLocked }) {
+  const [tabProd, setTabProd] = useState('catat')   // 'catat' | 'riwayat' — riwayat produksi langsung di sini, tidak perlu ke Lainnya
   const [tanggal, setTanggal] = useState(formatTanggal())
   const [divisi, setDivisi] = useState('Kitchen')
   const [menuId, setMenuId] = useState('')
@@ -1568,8 +1569,22 @@ function ProduksiView({ bahanBaku, showToast, loadData, logAudit, setView, userN
 
   if (isLocked) return <LockedScreen />
 
+  const tabsProduksi = (
+    <div style={{ display: 'flex', gap: '6px', marginBottom: '12px' }}>
+      {[['catat', '📝 Catat produksi'], ['riwayat', `📋 Riwayat (${(produksi || []).length})`]].map(([k, l]) => (
+        <button key={k} onClick={() => setTabProd(k)} style={{ ...S.btn, flex: 1, padding: '8px 10px', fontSize: '12px', borderRadius: '99px', background: tabProd === k ? C.sun : C.panel, color: C.text, border: `1px solid ${tabProd === k ? C.sun : C.border}` }}>{l}</button>
+      ))}
+    </div>
+  )
+  if (tabProd === 'riwayat') return (
+    <div>
+      {tabsProduksi}
+      <HistoryProduksiView produksi={produksi || []} bahanBaku={bahanBaku} showToast={showToast} loadData={loadData} logAudit={logAudit} userName={userName} />
+    </div>
+  )
   return (
     <div>
+      {tabsProduksi}
       <h2 style={{ fontSize: '17px', fontWeight: 600, marginBottom: '4px' }}>📝 Input Produksi</h2>
       <p style={{ fontSize: '12px', color: C.text3, marginBottom: '14px' }}>Mentah → Prepack · stok & COGS otomatis</p>
 
@@ -1706,7 +1721,7 @@ function ProduksiView({ bahanBaku, showToast, loadData, logAudit, setView, userN
         </FormRow>
       </div>
 
-      <FormRow label={status === 'selesai' ? 'Foto hasil (opsional)' : 'Foto progress (opsional)'}>
+      <FormRow label={status === 'selesai' ? 'Foto hasil (boleh kosong)' : 'Foto progress (boleh kosong)'}>
         <input type="file" accept="image/*" onChange={handleFoto} style={{ ...S.input, padding: '8px' }} />
         {foto && <img src={foto} alt="foto" style={{ maxWidth: '160px', marginTop: '8px', borderRadius: '8px' }} />}
       </FormRow>
@@ -2003,7 +2018,7 @@ function HistoryProduksiView({ produksi, bahanBaku, showToast, loadData, logAudi
           </FormRow>
         </div>
 
-        <FormRow label="Foto (opsional)">
+        <FormRow label="Foto (boleh kosong)">
           <input type="file" accept="image/*" onChange={handleFotoEdit} style={{ ...S.input, padding: '8px' }} />
           {editFoto && <img src={editFoto} alt="foto" style={{ maxWidth: '160px', marginTop: '8px', borderRadius: '8px' }} />}
         </FormRow>
@@ -2468,7 +2483,7 @@ function InputNotaView({ bahanBaku, showToast, loadData, logAudit, setView, user
   }[jalur]
 
   const fotoBlock = (
-    <FormRow label={mode === 'foto' ? 'Foto nota' : 'Foto nota (opsional)'}>
+    <FormRow label={mode === 'foto' ? 'Foto nota' : 'Foto nota (boleh kosong)'}>
       <input type="file" accept="image/*" multiple onChange={handleFoto} style={{ ...S.input, padding: '8px' }} />
       <div style={{ fontSize: '11px', color: C.text3, marginTop: '4px' }}>
         📸 Foto langsung atau pilih dari galeri / WhatsApp, boleh beberapa sekaligus (nota panjang atau beberapa nota). {mode === 'foto' ? 'Tidak perlu ketik barang.' : ''}
@@ -2564,7 +2579,7 @@ function InputNotaView({ bahanBaku, showToast, loadData, logAudit, setView, user
           <div style={{ background: C.yellowBg, border: `1px solid ${C.yellowBorder}`, borderRadius: '8px', padding: '8px 10px', marginTop: '6px' }}>
             <div style={{ fontSize: '11px', color: C.yellow, marginBottom: '6px' }}>Dicatat sebagai hutang toko ke orang itu sampai diganti. Kalau sebagian sudah diganti (misal Tissa transfer 700.000 duluan), isi di sini:</div>
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '6px' }}>
-              <input type="number" inputMode="numeric" value={digantiSebagian} onChange={e => setDigantiSebagian(e.target.value)} placeholder="Sudah diganti Rp (opsional)" style={{ ...S.input, padding: '8px', fontSize: '12px' }} />
+              <input type="number" inputMode="numeric" value={digantiSebagian} onChange={e => setDigantiSebagian(e.target.value)} placeholder="Sudah diganti Rp (boleh kosong)" style={{ ...S.input, padding: '8px', fontSize: '12px' }} />
               <select value={sumberGanti} onChange={e => setSumberGanti(e.target.value)} style={{ ...S.input, padding: '8px', fontSize: '12px' }}>
                 <option value="transfer_owner">dari BCA Tissa (pribadi)</option>
                 <option value="shopeepay_tissa">dari ShopeePay Tissa</option>
@@ -2614,7 +2629,7 @@ function InputNotaView({ bahanBaku, showToast, loadData, logAudit, setView, user
               </button>
             ))}
           </div>
-          <div style={{ fontSize: '10.5px', color: C.text3, marginTop: '6px' }}>Opsional, boleh pilih lebih dari satu. Yang dipilih ditandai "sudah dibeli" saat nota disimpan. Di mode ketik manual, barangnya ditambahkan ke daftar tanpa menghapus yang sudah diketik.</div>
+          <div style={{ fontSize: '10.5px', color: C.text3, marginTop: '6px' }}>Boleh kosong, boleh pilih lebih dari satu. Yang dipilih ditandai "sudah dibeli" saat nota disimpan. Di mode ketik manual, barangnya ditambahkan ke daftar tanpa menghapus yang sudah diketik.</div>
           {reqSiap.length > 1 && requestIds.length < reqSiap.length && (
             <button onClick={() => kaitkanRequests(reqSiap.filter(r => !requestIds.includes(r.id)))} style={{ ...S.btn, marginTop: '6px', padding: '5px 10px', fontSize: '11px', background: 'transparent', color: C.text2, border: `1px dashed ${C.border}` }}>Pilih semua {reqSiap.length} request</button>
           )}
@@ -3295,7 +3310,7 @@ function BahanFormModal({ mode, initial, onClose, showToast, loadData, logAudit,
         {/* Kemasan konversi section */}
         <div style={{ background: C.panel2, padding: '10px 12px', borderRadius: '8px', marginBottom: '8px' }}>
           <div style={{ fontSize: '11px', color: C.text3, fontWeight: 500, marginBottom: '8px' }}>
-            📦 Konversi kemasan → satuan dasar (opsional tapi penting untuk COGS akurat)
+            📦 Konversi kemasan → satuan dasar (boleh kosong tapi penting untuk COGS akurat)
           </div>
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' }}>
             <div>
@@ -3336,7 +3351,7 @@ function BahanFormModal({ mode, initial, onClose, showToast, loadData, logAudit,
 
         {!isEdit && (
           <div style={{ marginBottom: '8px' }}>
-            <label style={S.label}>Stok Awal (opsional)</label>
+            <label style={S.label}>Stok Awal (boleh kosong)</label>
             <input type="number" value={stokAwal} onChange={e => setStokAwal(e.target.value)} placeholder="0" style={S.input} />
             <p style={{ fontSize: '10px', color: C.text3, marginTop: '2px' }}>Kosongkan kalau belum ada stok fisik. Bisa input nanti via Belanja.</p>
           </div>
@@ -3871,7 +3886,7 @@ function WasteView({ bahanBaku, waste, showToast, loadData, logAudit, setView, u
             <input type="text" value={yangCatat} onChange={e => setYangCatat(e.target.value)} placeholder="Nama..." style={S.input} />
           </FormRow>
 
-          <FormRow label="Foto bukti (opsional)">
+          <FormRow label="Foto bukti (boleh kosong)">
             <input type="file" accept="image/*" onChange={handleFoto} style={{ ...S.input, padding: '8px' }} />
             {foto && <img src={foto} alt="" style={{ maxWidth: '120px', marginTop: '8px', borderRadius: '6px' }} />}
           </FormRow>
@@ -4695,7 +4710,7 @@ function ResepForm({ initial, bahanBaku, userName, showToast, canEdit, onSave, o
         </div>
       )}
 
-      <FormRow label="Catatan / cara masak (opsional)">
+      <FormRow label="Catatan / cara masak (boleh kosong)">
         <textarea rows={3} value={catatan} onChange={e => setCatatan(e.target.value)}
           placeholder="Urutan masak, suhu, waktu, tips standar..."
           style={S.input}

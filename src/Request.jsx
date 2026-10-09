@@ -240,7 +240,7 @@ export function RequestBelanjaView({ bahanBaku = [], requests = [], setRequests,
           {r.catatan_owner && <div style={{ fontSize: '11.5px', color: C.sunDark, marginTop: '4px', background: C.yellowBg, padding: '6px 8px', borderRadius: '6px' }}>👑 {r.diputuskan_oleh}: {r.catatan_owner}</div>}
           {isOwner && r.status === 'menunggu' && (
             <div style={{ marginTop: '10px' }}>
-              <input value={noteOwner[r.id] || ''} onChange={e => setNoteOwner({ ...noteOwner, [r.id]: e.target.value })} placeholder="Catatan untuk staff (opsional): beli di mana, pakai dana apa" style={{ ...S.input, fontSize: '12px', marginBottom: '6px' }} />
+              <input value={noteOwner[r.id] || ''} onChange={e => setNoteOwner({ ...noteOwner, [r.id]: e.target.value })} placeholder="Catatan untuk staff (boleh kosong): beli di mana, pakai dana apa" style={{ ...S.input, fontSize: '12px', marginBottom: '6px' }} />
               <div style={{ display: 'flex', gap: '6px' }}>
                 <button onClick={() => putuskan(r, 'disetujui')} disabled={!!sibuk[r.id]} style={{ ...S.btn, ...S.btnSuccess, flex: 1, padding: '10px', opacity: sibuk[r.id] ? 0.6 : 1 }}>{sibuk[r.id] ? 'Menyimpan...' : '✓ Setujui'}</button>
                 <button onClick={() => putuskan(r, 'ditolak')} disabled={!!sibuk[r.id]} style={{ ...S.btn, background: C.redBg, color: C.red, border: `1px solid ${C.redBorder}`, padding: '10px 14px', opacity: sibuk[r.id] ? 0.6 : 1 }}>Tolak</button>
