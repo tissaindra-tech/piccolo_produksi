@@ -923,7 +923,7 @@ function StaffHome({ bahanBaku, produksi, belanja, closing, penjualan, requests 
         {/* Header misi */}
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '12px' }}>
           <div style={{ fontSize: '14px', fontWeight: 600, color: C.text }}>
-            {misiDone === MISI_TOTAL ? '🎉 Semua misi selesai!' : `📋 Misi harian — ${misiDone}/${MISI_TOTAL}`}
+            {misiDone === MISI_TOTAL ? '🎉 Semua tugas selesai!' : `📋 Tugas Wajib Harian — ${misiDone}/${MISI_TOTAL}`}
           </div>
           {/* Progress bar keseluruhan */}
           <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
@@ -949,7 +949,7 @@ function StaffHome({ bahanBaku, produksi, belanja, closing, penjualan, requests 
           </div>
           <div style={{ flex: 1 }}>
             <div style={{ fontSize: '13px', fontWeight: 500, color: produksiSelesai ? C.text3 : C.text, textDecoration: produksiSelesai ? 'line-through' : 'none' }}>
-              Input produksi pagi
+              Input produksi/prepack
             </div>
             {produksiSelesai ? (
               <div style={{ fontSize: '11px', color: C.green, marginTop: '1px' }}>
@@ -977,7 +977,7 @@ function StaffHome({ bahanBaku, produksi, belanja, closing, penjualan, requests 
           </div>
           <div style={{ flex: 1 }}>
             <div style={{ fontSize: '13px', fontWeight: 500, color: stokSelesai ? C.text3 : C.text, textDecoration: stokSelesai ? 'line-through' : 'none' }}>
-              {isOpname ? '📦 Stok opname mingguan — hitung SEMUA bahan' : 'Update stok harian (bahan cepat habis)'}
+              {isOpname ? '📦 Stok opname mingguan — hitung SEMUA bahan' : 'Update stok harian PENTING!!!!!'}
             </div>
             <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginTop: '4px' }}>
               <div style={{ flex: 1, height: '3px', background: C.panel2, borderRadius: '99px', overflow: 'hidden' }}>
