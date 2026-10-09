@@ -493,7 +493,7 @@ export default function App() {
   const logAudit = async (tabel, recordId, aksi, bahanId, bahanNama, detail) => {
     try {
       await supabase.from('audit_log').insert({
-        id: generateId(), tabel, record_id: recordId, aksi,
+        id: generateId(), tabel, record_id: /^\d+$/.test(String(recordId ?? '')) ? Number(recordId) : null, aksi,
         bahan_id: bahanId, bahan_nama: bahanNama,
         detail, yang_melakukan: userName || role, role_user: role,
       })
