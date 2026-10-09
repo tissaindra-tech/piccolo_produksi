@@ -50,10 +50,7 @@ Deno.serve(async (req: Request) => {
 
   const masterText = master
     .map((m) => {
-      const kemasan = m.kemasan && m.qty_per_kemasan
-        ? ` | kemasan: ${m.kemasan} = ${m.qty_per_kemasan} ${m.satuan_dasar || ""}`
-        : "";
-      return `${m.id} | ${m.nama} | satuan dasar: ${m.satuan_dasar || "-"}${kemasan}`;
+      return `${m.id} | ${m.nama} | satuan dasar: ${m.satuan_dasar || "-"}`;
     })
     .join("\n");
 
@@ -61,7 +58,7 @@ Deno.serve(async (req: Request) => {
 Tugas:
 1. Baca SEMUA baris item yang dibeli. Lewati baris yang bukan item (subtotal, PPN, pembulatan, kembalian, voucher, nama kasir).
 2. Untuk tiap item, cocokkan ke daftar master bahan di bawah. Isi bahan_id dengan id master hanya jika memang barang yang sama (merek/ukuran berbeda tetap boleh jika jelas bahan yang sama). Jika ragu atau tidak ada, bahan_id = null.
-3. jumlah dan satuan: tulis seperti yang dibeli di nota. Jika master punya kemasan dan item dibeli per kemasan, pakai nama kemasan master sebagai satuan (misal "pack", "dus", "botol"). Jika dibeli per berat/volume, pakai satuan dasar master (gram, ml, kg, liter, pcs).
+3. jumlah dan satuan: SELALU dalam satuan dasar master (gram, ml, kg, liter, pcs), karena ukuran kemasan yang dibeli beda-beda. Konversikan sendiri bila ukuran kemasan tertulis di nota: "2 botol x 1000 ml" → jumlah 2000, satuan "ml"; "3 pack x 250 gr" → 750 "gram". Jika nota hanya menyebut jumlah kemasan tanpa ukurannya (misal "1 PACK"), tulis jumlah dan satuan persis seperti di nota ("1", "pack") supaya staff mengisi gramasinya sendiri.
 4. harga_total = harga total baris itu (jumlah x harga satuan, setelah diskon baris), angka rupiah bulat tanpa titik.
 5. Jika foto bukan nota atau tidak terbaca, terbaca = false dan items kosong.
 

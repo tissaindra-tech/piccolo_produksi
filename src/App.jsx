@@ -2050,12 +2050,13 @@ function InputNotaView({ bahanBaku, showToast, loadData, logAudit, setView, user
   const [tanggal, setTanggal] = useState(formatTanggal())
   const [jalur, setJalur] = useState('kecil')
   const [sumberDana, setSumberDana] = useState('kas_kasir')
-  // Isi per kemasan yang baru diketahui saat input (bahan_id -> angka), untuk barang yang di master belum punya
-  // qty_per_kemasan. Dipakai untuk konversi stok di nota ini dan disimpan ke master supaya berikutnya otomatis.
-  const [isiKemasan, setIsiKemasan] = useState({})
-  const isiPer = (ba) => Number(ba?.qty_per_kemasan) || Number(isiKemasan[ba?.id]) || 0
-  const satuanKemasan = (ba, satuan) => !!(ba?.kemasan && satuan && satuan.toLowerCase().includes(ba.kemasan.toLowerCase())
-    && String(ba.kemasan).toLowerCase() !== String(ba.satuan_dasar || '').toLowerCase())
+  // ATURAN JUMLAH: selalu dalam satuan dasar master (gram / ml / pcs), sama seperti di Accurate.
+  // Ukuran kemasan yang dibeli beda-beda (syrup kadang 650 ml, kadang 1000 ml), jadi tidak ada konversi per kemasan:
+  // beli 2 botol x 1000 ml → tulis 2000 ml. Satuan di baris barang dikunci ke satuan dasar.
+  const samaSatuan = (a, b) => {
+    const n = (x) => ({ gr: 'gram', g: 'gram', gram: 'gram', kg: 'kg', ml: 'ml', l: 'liter', ltr: 'liter', liter: 'liter', pc: 'pcs', pcs: 'pcs', buah: 'pcs', butir: 'pcs' })[String(x || '').trim().toLowerCase()] || String(x || '').trim().toLowerCase()
+    return n(a) === n(b)
+  }
   const [pakaiSumber2, setPakaiSumber2] = useState(false)   // nota dibayar dari dua sumber dana
   const [sumberDana2, setSumberDana2] = useState('shopeepay_tissa')
   const [jumlahSumber2, setJumlahSumber2] = useState('')
@@ -2101,7 +2102,8 @@ function InputNotaView({ bahanBaku, showToast, loadData, logAudit, setView, user
         const b = bahanBaku.find(x => String(x.id) === String(i.bahan_id))
         let exp = ''
         if (b?.is_perishable && b?.umur_simpan_hari) { const d = new Date(); d.setDate(d.getDate() + b.umur_simpan_hari); exp = d.toISOString().split('T')[0] }
-        baru.push({ bahan_id: b ? b.id : '', jumlah: String(i.jumlah || ''), satuan: i.satuan || b?.satuan_dasar || '', harga: '', tanggal_expired: exp })
+        const satuanSama = !b || samaSatuan(i.satuan, b.satuan_dasar)
+        baru.push({ bahan_id: b ? b.id : '', jumlah: satuanSama ? String(i.jumlah || '') : '', diNota: satuanSama ? '' : `request ${i.jumlah} ${i.satuan || ''}`.trim(), satuan: b?.satuan_dasar || i.satuan || '', harga: '', tanggal_expired: exp })
       }))
       setItems([...terisi, ...baru])
       showToast(baru.length ? `+${baru.length} barang dari ${label}` : `${label} dikaitkan, barangnya sudah ada di daftar`)
@@ -2122,8 +2124,11 @@ function InputNotaView({ bahanBaku, showToast, loadData, logAudit, setView, user
         bahan_id:        match ? match.id : '',
         namaAI:          item.nama_nota,
         yakin:           item.yakin !== false,
-        jumlah:          String(item.jumlah ?? ''),
-        satuan:          item.satuan || (match ? match.satuan_dasar : ''),
+        // Jumlah harus satuan dasar. Kalau nota ditulis per kemasan (2 botol, 1 pack), kosongkan dan tunjukkan
+        // bacaan notanya supaya staff mengisi total gram/ml-nya sendiri.
+        jumlah:          !match || samaSatuan(item.satuan, match.satuan_dasar) ? String(item.jumlah ?? '') : '',
+        diNota:          match && !samaSatuan(item.satuan, match.satuan_dasar) && item.jumlah ? `${item.jumlah} ${item.satuan || ''}`.trim() : '',
+        satuan:          match ? match.satuan_dasar : (item.satuan || ''),
         harga:           String(Math.round(item.harga_total || 0) || ''),
         tanggal_expired: match?.is_perishable && match?.umur_simpan_hari
           ? (() => { const d = new Date(); d.setDate(d.getDate() + match.umur_simpan_hari); return d.toISOString().split('T')[0] })()
@@ -2230,9 +2235,6 @@ function InputNotaView({ bahanBaku, showToast, loadData, logAudit, setView, user
     // dibaca Claude pada tugas pagi, jadi statusnya harus "menunggu" dan total nota wajib diisi manual.
     const fotoBelumDibaca = mode === 'foto' && validItems.length === 0
     if (!fotoSaja && validItems.length === 0 && biayaValid.length === 0) { showToast('❌ Minimal 1 barang atau 1 biaya'); return }
-    // Beli per kemasan (Pack/Botol) tapi isi per kemasannya belum diketahui → minta diisi dulu supaya stok tidak salah satuan
-    const butuhIsi = validItems.map(i => bahanBaku.find(x => x.id == i.bahan_id)).find((b, k) => b && satuanKemasan(b, validItems[k].satuan) && !(isiPer(b) > 0))
-    if (butuhIsi) { showToast(`❌ Isi dulu 1 ${butuhIsi.kemasan} = berapa ${butuhIsi.satuan_dasar} untuk ${butuhIsi.nama}`); return }
     if (fotoBelumDibaca && !(Number(totalNota) > 0)) { showToast('❌ Isi "Total di nota" dulu, supaya nota ini ikut terhitung di Rekap Harian'); return }
     if (fotoBelumDibaca && Number(totalNota) < totalBiayaLain) { showToast('❌ Total di nota lebih kecil dari jumlah baris bukan stok. Cek lagi angkanya'); return }
     const totalEfektif = fotoBelumDibaca ? Number(totalNota) : totalHarga
@@ -2254,7 +2256,7 @@ function InputNotaView({ bahanBaku, showToast, loadData, logAudit, setView, user
         const b = bahanBaku.find(x => x.id == i.bahan_id)
         return {
           bahan_id: b.id, nama: b.nama, jumlah: Number(i.jumlah),
-          harga: Number(i.harga), satuan: i.satuan,
+          harga: Number(i.harga), satuan: b.satuan_dasar || i.satuan,
           tanggal_expired: i.tanggal_expired || null,
         }
       })
@@ -2287,22 +2289,9 @@ function InputNotaView({ bahanBaku, showToast, loadData, logAudit, setView, user
         const b = bahanBaku.find(x => x.id === item.bahan_id)
         if (!b) continue
 
-        // Cek apakah item dibeli dalam kemasan atau satuan_dasar
-        const qtyKemasan = isiPer(b)
-        const isKemasan = qtyKemasan > 0 && b.kemasan &&
-          item.satuan && item.satuan.toLowerCase().includes(b.kemasan.toLowerCase())
-        const belajarIsi = isKemasan && !(Number(b.qty_per_kemasan) > 0)   // isi per kemasan baru diketahui → simpan ke master
-
-        let stokTambah, hargaPerSatuan
-        if (isKemasan) {
-          // Beli dalam kemasan → konversi ke satuan_dasar
-          stokTambah = Number(item.jumlah) * qtyKemasan
-          hargaPerSatuan = Number(item.harga) / stokTambah
-        } else {
-          // Beli dalam satuan_dasar langsung
-          stokTambah = Number(item.jumlah)
-          hargaPerSatuan = Number(item.harga) / stokTambah
-        }
+        // Jumlah sudah dalam satuan dasar (gram/ml/pcs), langsung masuk stok tanpa konversi kemasan
+        const stokTambah = Number(item.jumlah)
+        const hargaPerSatuan = Number(item.harga) / stokTambah
 
         await supabase.from('stok_batch').insert({
           id: generateId(), bahan_id: b.id,
@@ -2313,13 +2302,12 @@ function InputNotaView({ bahanBaku, showToast, loadData, logAudit, setView, user
         await supabase.from('bahan_baku').update({
           stok_saat_ini: (b.stok_saat_ini || 0) + stokTambah,
           harga_per_satuan: hargaPerSatuan,
-          ...(belajarIsi ? { qty_per_kemasan: qtyKemasan } : {}),
         }).eq('id', b.id)
         await logAudit('belanja', newId, 'create', b.id, b.nama, {
           jumlah_input: item.jumlah, satuan_input: item.satuan,
           stok_tambah: stokTambah, satuan_dasar: b.satuan_dasar,
           harga_per_satuan: hargaPerSatuan, jalur, sumber: sumberDana,
-          mode: isKemasan ? 'kemasan' : 'satuan_dasar'
+          mode: 'satuan_dasar'
         })
       }
 
@@ -2523,14 +2511,12 @@ function InputNotaView({ bahanBaku, showToast, loadData, logAudit, setView, user
       )}
 
       {(mode === 'manual' || aiResult || isiBarang) && (<>
-      <div style={{ fontSize: '12px', color: C.text3, fontWeight: 500, marginBottom: '8px' }}>🛍️ Detail barang yang dibeli:</div>
+      <div style={{ fontSize: '12px', color: C.text3, fontWeight: 500, marginBottom: '2px' }}>🛍️ Detail barang yang dibeli:</div>
+      <div style={{ fontSize: '10.5px', color: C.text3, marginBottom: '8px' }}>Jumlah selalu dalam satuan terkecil seperti di Accurate: gram, ml, atau pcs. Beli 2 botol × 1000 ml → tulis 2000.</div>
 
       {items.map((item, idx) => {
         const ba = bahanBaku.find(x => x.id === item.bahan_id)
-        const hasKemasan = isiPer(ba) > 0 && ba?.kemasan
-        const tanyaIsi = ba && satuanKemasan(ba, item.satuan) && !(Number(ba.qty_per_kemasan) > 0)   // beli per Pack tapi isi per Pack belum ada di master
-        const stokTambahPreview = hasKemasan && item.jumlah && satuanKemasan(ba, item.satuan)
-          ? Number(item.jumlah) * isiPer(ba) : null
+        const stokTambahPreview = ba && Number(item.jumlah) > 0 ? Number(item.jumlah) : null
         const hargaPerSatuanPreview = stokTambahPreview && item.harga
           ? (Number(item.harga) / stokTambahPreview) : null
 
@@ -2539,6 +2525,11 @@ function InputNotaView({ bahanBaku, showToast, loadData, logAudit, setView, user
             {item.namaAI && (
               <div style={{ fontSize: '10.5px', color: item.yakin === false ? C.red : C.text3, marginBottom: '4px' }}>
                 Di nota: <strong>{item.namaAI}</strong>{item.yakin === false ? ' · angka kurang jelas, cek ya' : ''}
+              </div>
+            )}
+            {item.diNota && ba && (
+              <div style={{ fontSize: '11px', color: C.yellow, background: C.yellowBg, border: `1px solid ${C.yellowBorder}`, borderRadius: '6px', padding: '5px 8px', marginBottom: '6px' }}>
+                Tertulis <strong>{item.diNota}</strong>. Isi jumlahnya dalam <strong>{ba.satuan_dasar}</strong> sesuai ukuran kemasan yang dibeli (misal 2 botol × 1000 ml = 2000).
               </div>
             )}
             <div style={{ display: 'grid', gridTemplateColumns: '2fr auto', gap: '6px', marginBottom: '6px', alignItems: 'end' }}>
@@ -2554,27 +2545,16 @@ function InputNotaView({ bahanBaku, showToast, loadData, logAudit, setView, user
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '6px', marginBottom: '4px' }}>
               <input type="number" placeholder="Jumlah" value={item.jumlah}
                 onChange={e => updateItem(idx, 'jumlah', e.target.value)} style={S.input} />
-              <input type="text" placeholder="Satuan" value={item.satuan}
-                onChange={e => updateItem(idx, 'satuan', e.target.value)}
-                style={{ ...S.input, background: hasKemasan ? C.greenBg : undefined }}
+              <input type="text" placeholder="Satuan" value={ba ? ba.satuan_dasar : item.satuan} readOnly
+                title="Satuan dasar master (sama dengan Accurate). Isi jumlah dalam satuan ini."
+                style={{ ...S.input, background: C.panel, color: C.text3 }}
               />
               <input type="number" placeholder="Harga (Rp)" value={item.harga}
                 onChange={e => updateItem(idx, 'harga', e.target.value)} style={S.input} />
             </div>
-            {tanyaIsi && (
-              <div style={{ background: C.yellowBg, border: `1px solid ${C.yellowBorder}`, borderRadius: '6px', padding: '6px 10px', marginBottom: '4px' }}>
-                <div style={{ fontSize: '11px', color: C.yellow, marginBottom: '4px' }}>Isi per {ba.kemasan} belum ada di master. Lihat di kemasannya:</div>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '12px' }}>
-                  <span>1 {ba.kemasan} =</span>
-                  <input type="number" inputMode="decimal" value={isiKemasan[ba.id] || ''} onChange={e => setIsiKemasan(p => ({ ...p, [ba.id]: e.target.value }))} placeholder="misal 250" style={{ ...S.input, width: '90px', padding: '6px 8px' }} />
-                  <span>{ba.satuan_dasar}</span>
-                </div>
-                <div style={{ fontSize: '10px', color: C.text3, marginTop: '4px' }}>Disimpan ke master saat nota disimpan, jadi berikutnya otomatis.</div>
-              </div>
-            )}
-            {hasKemasan && !tanyaIsi && (
-              <div style={{ fontSize: '11px', color: C.text3, marginBottom: '4px' }}>
-                💡 Satuan kemasan: <strong>{ba.kemasan}</strong> (1 {ba.kemasan} = {isiPer(ba)} {ba.satuan_dasar})
+            {ba && !item.diNota && !samaSatuan(ba.satuan_dasar, ba.kemasan) && ba.kemasan && (
+              <div style={{ fontSize: '10.5px', color: C.text3, marginBottom: '4px' }}>
+                Jumlah dalam <strong>{ba.satuan_dasar}</strong> total, bukan jumlah {ba.kemasan}-nya.
               </div>
             )}
             {stokTambahPreview && hargaPerSatuanPreview && (
