@@ -19,7 +19,7 @@ const Badge = ({ status }) => {
 
 const ringkasItems = (items = []) => items.map(i => `${i.nama} ${i.jumlah || ''} ${i.satuan || ''}`.trim()).join(', ')
 
-export function RequestBelanjaView({ bahanBaku = [], requests = [], role, userName, showToast, loadData, setView, logAudit, requestDraft, setRequestDraft }) {
+export function RequestBelanjaView({ bahanBaku = [], requests = [], setRequests, role, userName, showToast, loadData, setView, logAudit, requestDraft, setRequestDraft }) {
   const isOwner = role === 'owner'
   const [rows, setRows] = useState([])            // [{ bahan_id, nama, jumlah, satuan }]
   const [cari, setCari] = useState('')
@@ -28,6 +28,10 @@ export function RequestBelanjaView({ bahanBaku = [], requests = [], role, userNa
   const [filter, setFilter] = useState(isOwner ? 'menunggu' : 'semua')
   const [noteOwner, setNoteOwner] = useState({})   // id -> catatan owner
   const [buka, setBuka] = useState(!isOwner)
+  const [sibuk, setSibuk] = useState({})           // id -> true selagi tombol setujui/tolak/batal diproses
+
+  // Ubah satu request langsung di layar tanpa muat ulang semua data (daftar lain tetap terlihat, tidak ada layar loading).
+  const ubahLokal = (id, patch) => setRequests && setRequests(prev => prev.map(x => x.id === id ? { ...x, ...patch } : x))
 
   // Semua barang aktif yang bisa dibeli: mentah, prepack, maupun barang jadi (Indomie, susu kedelai botol)
   const mentah = bahanBaku.filter(b => b.is_active !== false)
@@ -70,19 +74,30 @@ export function RequestBelanjaView({ bahanBaku = [], requests = [], role, userNa
   }
 
   const putuskan = async (r, status) => {
+    if (sibuk[r.id]) return
+    setSibuk(p => ({ ...p, [r.id]: true }))
     try {
-      const { error } = await supabase.from('request_belanja').update({
+      const patch = {
         status, diputuskan_oleh: userName || 'owner', catatan_owner: (noteOwner[r.id] || '').trim() || null, tanggal_putus: new Date().toISOString(),
-      }).eq('id', r.id)
+      }
+      const { error } = await supabase.from('request_belanja').update(patch).eq('id', r.id)
       if (error) throw error
+      ubahLokal(r.id, patch)
+      setNoteOwner(p => { const n = { ...p }; delete n[r.id]; return n })
       showToast(status === 'disetujui' ? '✅ Disetujui' : 'Request ditolak')
-      loadData && loadData()
+      if (!setRequests && loadData) loadData()
     } catch (e) { showToast('❌ ' + e.message) }
+    setSibuk(p => { const n = { ...p }; delete n[r.id]; return n })
   }
   const batalkan = async (r) => {
+    if (sibuk[r.id]) return
+    setSibuk(p => ({ ...p, [r.id]: true }))
     const { error } = await supabase.from('request_belanja').update({ status: 'batal' }).eq('id', r.id)
+    setSibuk(p => { const n = { ...p }; delete n[r.id]; return n })
     if (error) { showToast('❌ ' + error.message); return }
-    showToast('Request dibatalkan'); loadData && loadData()
+    ubahLokal(r.id, { status: 'batal' })
+    showToast('Request dibatalkan')
+    if (!setRequests && loadData) loadData()
   }
 
   const daftar = requests.filter(r => {
@@ -193,13 +208,13 @@ export function RequestBelanjaView({ bahanBaku = [], requests = [], role, userNa
             <div style={{ marginTop: '10px' }}>
               <input value={noteOwner[r.id] || ''} onChange={e => setNoteOwner({ ...noteOwner, [r.id]: e.target.value })} placeholder="Catatan untuk staff (opsional): beli di mana, pakai dana apa" style={{ ...S.input, fontSize: '12px', marginBottom: '6px' }} />
               <div style={{ display: 'flex', gap: '6px' }}>
-                <button onClick={() => putuskan(r, 'disetujui')} style={{ ...S.btn, ...S.btnSuccess, flex: 1, padding: '10px' }}>✓ Setujui</button>
-                <button onClick={() => putuskan(r, 'ditolak')} style={{ ...S.btn, background: C.redBg, color: C.red, border: `1px solid ${C.redBorder}`, padding: '10px 14px' }}>Tolak</button>
+                <button onClick={() => putuskan(r, 'disetujui')} disabled={!!sibuk[r.id]} style={{ ...S.btn, ...S.btnSuccess, flex: 1, padding: '10px', opacity: sibuk[r.id] ? 0.6 : 1 }}>{sibuk[r.id] ? 'Menyimpan...' : '✓ Setujui'}</button>
+                <button onClick={() => putuskan(r, 'ditolak')} disabled={!!sibuk[r.id]} style={{ ...S.btn, background: C.redBg, color: C.red, border: `1px solid ${C.redBorder}`, padding: '10px 14px', opacity: sibuk[r.id] ? 0.6 : 1 }}>Tolak</button>
               </div>
             </div>
           )}
           {!isOwner && r.status === 'menunggu' && r.dibuat_oleh === userName && (
-            <button onClick={() => batalkan(r)} style={{ ...S.btn, background: 'transparent', color: C.text3, border: `1px dashed ${C.border}`, padding: '6px 10px', fontSize: '11px', marginTop: '8px' }}>Batalkan request</button>
+            <button onClick={() => batalkan(r)} disabled={!!sibuk[r.id]} style={{ ...S.btn, background: 'transparent', color: C.text3, border: `1px dashed ${C.border}`, padding: '6px 10px', fontSize: '11px', marginTop: '8px', opacity: sibuk[r.id] ? 0.6 : 1 }}>{sibuk[r.id] ? 'Membatalkan...' : 'Batalkan request'}</button>
           )}
           {!isOwner && r.status === 'disetujui' && (
             <button onClick={() => setView('inputnota')} style={{ ...S.btn, ...S.btnPrimary, padding: '8px 12px', fontSize: '12px', marginTop: '8px' }}>Sudah dibeli? Input nota →</button>

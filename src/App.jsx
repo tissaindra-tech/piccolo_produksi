@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from 'react'
+import { useState, useEffect, useMemo, useRef } from 'react'
 import { supabase, generateId, formatTanggal, formatTanggalID, formatRupiah, daysFromNow } from './supabase'
 import * as XLSX from 'xlsx'
 import { C, S, Icon, uploadFotoToStorage, compressImage, salinKeDrive, setDriveContext, KATEGORI_BIAYA } from './shared'
@@ -358,8 +358,12 @@ export default function App() {
 
   const showToast = (msg) => { setToast(msg); setTimeout(() => setToast(''), 2400) }
 
+  // Layar loading penuh hanya saat data pertama kali dimuat setelah login.
+  // Refresh berikutnya (setelah approve, simpan, atau perubahan dari HP lain) jalan diam-diam di belakang,
+  // supaya layar tidak "kedip" dan tombol tidak hilang tiap ada aksi.
+  const sudahMuat = useRef(false)
   const loadDataCritical = async () => {
-    setLoading(true)
+    if (!sudahMuat.current) setLoading(true)
     try {
       const [b, p, bl, c, pj, lc, st, rq] = await Promise.all([
         supabase.from('bahan_baku').select('*').eq('is_active', true).order('nama'),
@@ -379,6 +383,7 @@ export default function App() {
       setPenjualan(pj.data || [])
       setLastClosingTanggal(lc.data?.[0]?.tanggal || null)
       setSettings(Object.fromEntries((st.data || []).map(r => [r.id, r.value])))
+      sudahMuat.current = true
     } catch (err) {
       console.error('loadDataCritical error:', err)
     } finally {
@@ -491,11 +496,11 @@ export default function App() {
 
   const props = {
     role, userName, setUserName, view, setView, currentUser, bisaPenjualan, opname, saveSetting, settings,
-    bahanBaku, produksi, belanja, closing, waste, auditLog, penjualan, requests, requestDraft, setRequestDraft,
+    bahanBaku, produksi, belanja, closing, waste, auditLog, penjualan, requests, setRequests, requestDraft, setRequestDraft,
     mintaBeli: (b) => { setRequestDraft(b); setView('request'); window.scrollTo({ top: 0 }) },
     loadData, showToast, logAudit, lazyLoaded,
     daysSinceClosing, isLocked,
-    handleLogout: () => { setRole(null); setCurrentUser(null); setUserName(''); setView('home'); setLazyLoaded({}) }
+    handleLogout: () => { setRole(null); setCurrentUser(null); setUserName(''); setView('home'); setLazyLoaded({}); sudahMuat.current = false }
   }
 
   return (
