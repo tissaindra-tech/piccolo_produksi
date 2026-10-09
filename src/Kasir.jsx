@@ -370,11 +370,10 @@ export function RekapHarianView({ bahanBaku, showToast, setView }) {
   useEffect(() => { load(tanggal) }, [tanggal])
 
   const { penjualan, belanja, pengeluaran, waste, produksi } = data
-  // Satu nota bisa berisi bahan stok + baris bukan stok (kunci, tisu, parkir). Di rekap dipisah:
-  // "Belanja bahan" hanya bagian stoknya, baris bukan stok masuk beban sesuai kategorinya.
+  // Total belanja = semua nota hari itu, bahan stok maupun bukan stok (kunci, tisu, parkir) digabung.
+  // Rinciannya tetap dipisah per baris di daftar, teks rekap, dan Excel supaya Accurate bisa membedakan.
   const biayaNota = (b) => (b.biaya_lain || []).reduce((s, x) => s + num(x.harga), 0)
-  const bahanNota = (b) => Math.max(0, num(b.total_harga) - biayaNota(b))
-  const totalBelanja = belanja.reduce((s, b) => s + bahanNota(b), 0)
+  const totalBelanja = belanja.reduce((s, b) => s + num(b.total_harga), 0)
   const totalBiayaLain = belanja.reduce((s, b) => s + biayaNota(b), 0)
   const notaMenunggu = belanja.filter(b => b.status_baca === 'menunggu').length
   const notaTanpaTotal = belanja.filter(b => !num(b.total_harga)).length
@@ -410,7 +409,7 @@ export function RekapHarianView({ bahanBaku, showToast, setView }) {
       METODE.forEach(([k, l]) => { if (num(penjualan[k])) L.push(`  ${l.replace(/^\S+\s/, '')}: ${formatRupiah(penjualan[k])}`) })
     } else L.push('Belum diinput')
     L.push('')
-    L.push(`BELANJA BAHAN (${belanja.length} nota, bahan stok ${formatRupiah(totalBelanja)}${notaMenunggu ? `, ${notaMenunggu} nota belum dibaca` : ''})`)
+    L.push(`BELANJA (${belanja.length} nota, total ${formatRupiah(totalBelanja)}${notaMenunggu ? `, ${notaMenunggu} nota belum dibaca` : ''})`)
     belanjaRows.forEach(r => L.push(`  ${r.kode || '[tanpa kode]'} ${r.nama_acc || r.nama} — ${r.jumlah} ${r.satuan} — ${formatRupiah(r.harga)} — ${r.sumber}`))
     belanja.filter(b => b.status_baca === 'menunggu').forEach(b => L.push(`  [belum dibaca] nota ${b.yang_belanja} — ${formatRupiah(b.total_harga)} — ${sumberText(b)}${b.catatan ? ` — ${b.catatan}` : ''}`))
     if (biayaRows.length) {
@@ -443,12 +442,12 @@ export function RekapHarianView({ bahanBaku, showToast, setView }) {
       { Keterangan: 'Jumlah transaksi', Nilai: penjualan?.jumlah_transaksi || '' },
       { Keterangan: 'Foto POS', Nilai: penjualan?.foto || '' },
       { Keterangan: 'Foto settlement EDC', Nilai: penjualan?.foto_edc || '' },
-      { Keterangan: 'Belanja bahan stok (total)', Nilai: totalBelanja },
-      { Keterangan: 'Bukan stok di nota belanja (perlengkapan, dll)', Nilai: totalBiayaLain },
-      { Keterangan: 'Nota belanja dari kas kasir (bahan + bukan stok)', Nilai: belanjaKas },
+      { Keterangan: 'Total belanja (bahan stok + bukan stok)', Nilai: totalBelanja },
+      { Keterangan: '  di antaranya bukan stok (perlengkapan, dll)', Nilai: totalBiayaLain },
+      { Keterangan: 'Belanja dari kas kasir', Nilai: belanjaKas },
       { Keterangan: 'Pengeluaran kasir (total)', Nilai: totalPengeluaran },
       { Keterangan: 'Pengeluaran kasir dari kas kasir', Nilai: pengeluaranKas },
-      { Keterangan: 'Kas tunai bersih (tunai − belanja kas − pengeluaran kas)', Nilai: kasTunaiBersih },
+      { Keterangan: 'Sisa cash hari ini (tunai − belanja kas − pengeluaran kas)', Nilai: kasTunaiBersih },
       { Keterangan: 'Nilai waste (perkiraan)', Nilai: Math.round(nilaiWaste) },
       { Keterangan: 'Produksi (batch)', Nilai: produksi.length },
     ]
@@ -500,9 +499,9 @@ export function RekapHarianView({ bahanBaku, showToast, setView }) {
 
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '6px', marginBottom: '10px' }}>
         <Tile label="Omzet" value={penjualan ? formatRupiah(penjualan.total_omzet) : 'belum diinput'} color={penjualan ? 'green' : 'yellow'} sub={penjualan?.jumlah_transaksi ? `${penjualan.jumlah_transaksi} transaksi` : ''} />
-        <Tile label="Belanja bahan (stok)" value={formatRupiah(totalBelanja)} color="blue" sub={`${belanja.length} nota${totalBiayaLain ? ` · +${formatRupiah(totalBiayaLain)} bukan stok` : ''}${notaMenunggu ? ` · ⏳ ${notaMenunggu} belum dibaca` : ''}`} />
+        <Tile label="Total belanja" value={formatRupiah(totalBelanja)} color="blue" sub={`${belanja.length} nota${notaMenunggu ? ` · ⏳ ${notaMenunggu} belum dibaca` : ''}`} />
         <Tile label="Pengeluaran kasir" value={formatRupiah(totalPengeluaran)} color="red" sub={`${pengeluaran.length} catatan`} />
-        <Tile label="Kas tunai bersih" value={formatRupiah(kasTunaiBersih)} color={kasTunaiBersih >= 0 ? 'greenLight' : 'red'} sub="tunai − keluar dari kas kasir" />
+        <Tile label="Sisa cash hari ini" value={formatRupiah(kasTunaiBersih)} color={kasTunaiBersih >= 0 ? 'greenLight' : 'red'} sub="tunai − keluar dari kas kasir" />
       </div>
 
       <div style={{ display: 'flex', gap: '6px', marginBottom: '12px' }}>
@@ -529,7 +528,7 @@ export function RekapHarianView({ bahanBaku, showToast, setView }) {
         )}
       </Section>
 
-      <Section title="🧾 Belanja bahan" count={belanja.length} total={totalBelanja} empty="Tidak ada nota belanja.">
+      <Section title="🧾 Belanja" count={belanja.length} total={totalBelanja} empty="Tidak ada nota belanja.">
         {notaTanpaTotal > 0 && (
           <div style={{ background: C.redBg, color: C.red, border: `1px solid ${C.redBorder}`, borderRadius: '6px', padding: '6px 10px', fontSize: '11px', marginBottom: '8px' }}>
             ⚠️ {notaTanpaTotal} nota tersimpan tanpa total (Rp 0), jadi belum ikut dihitung. Isi totalnya lewat Riwayat Belanja → pilih nota → ✏️ Edit.
