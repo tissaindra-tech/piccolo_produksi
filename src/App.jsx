@@ -100,8 +100,7 @@ function Login({ onLogin }) {
       <div style={{ minHeight: '100vh', background: C.bg, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '20px' }}>
         <div style={{ background: C.panel, borderRadius: '16px', padding: '28px 20px', maxWidth: '380px', width: '100%', boxShadow: '0 4px 20px rgba(0,0,0,0.08)' }}>
           <div style={{ textAlign: 'center', marginBottom: '20px' }}>
-            <img src="/icons/logo-hitam.png" alt="Piccolo Corner" style={{ width: '150px', height: 'auto', margin: '0 auto 6px', display: 'block' }} />
-            <h1 style={{ fontSize: '18px', fontWeight: 600, color: C.text, margin: '8px 0 4px' }}>Piccolo Corner</h1>
+            <img src="/icons/logo-hitam.png" alt="Piccolo Corner" style={{ width: '150px', height: 'auto', margin: '0 auto 10px', display: 'block' }} />
             <p style={{ fontSize: '12px', color: C.text3 }}>Pilih namamu untuk masuk</p>
           </div>
           {gagalMuat && (
