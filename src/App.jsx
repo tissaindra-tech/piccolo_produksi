@@ -688,8 +688,9 @@ function AppShell(props) {
   }
   const allMenus = role === 'owner'
     ? ['home', 'penjualan', 'inputnota', 'rekap', 'request', 'dashboard', 'stoklist', 'histproduksi', 'historybelanja', 'pengeluaran', 'resep', 'upload', 'auditlog', 'kelolauser', 'panduan']
-    // Staff: Stok di menu bawah; Kas Keluar (hanya dipakai owner) pindah ke "Lainnya"
-    : ['home', 'closing', 'produksi', 'stoklist', 'request', ...(bisaPenjualan ? ['penjualan'] : []), 'waste', 'inputnota', 'pengeluaran', 'histproduksi', 'historybelanja', 'resep', 'panduan']
+    // Staff: Home · Stok · Produksi · Request di menu bawah; sisanya di "Lainnya".
+    // Update Stok juga bisa dibuka dari tombol di Home. Riwayat belanja tidak dipakai staff.
+    : ['home', 'stoklist', 'produksi', 'request', 'closing', ...(bisaPenjualan ? ['penjualan'] : []), 'inputnota', 'waste', 'pengeluaran', 'histproduksi', 'resep', 'panduan']
   const primary = allMenus.slice(0, 4)               // 4 ikon di menu bawah + "Lainnya"
   const more = allMenus.slice(4)
   const go = (id) => { setView(id); setMoreOpen(false); window.scrollTo({ top: 0 }) }
@@ -2169,7 +2170,7 @@ function HistoryProduksiView({ produksi, bahanBaku, showToast, loadData, logAudi
     </div>
   )
 }
-function InputNotaView({ bahanBaku, showToast, loadData, logAudit, setView, userName, setUserName, isLocked, settings, requests = [] }) {
+function InputNotaView({ bahanBaku, showToast, loadData, logAudit, setView, userName, setUserName, isLocked, settings, requests = [], role }) {
   const [tanggal, setTanggal] = useState(formatTanggal())
   const [jalur, setJalur] = useState('kecil')
   const [sumberDana, setSumberDana] = useState('kas_kasir')
@@ -2205,6 +2206,9 @@ function InputNotaView({ bahanBaku, showToast, loadData, logAudit, setView, user
   const [biayaLain, setBiayaLain] = useState([])     // baris di nota yang bukan bahan stok: [{ keterangan, kategori, harga }]
   const totalBiayaLain = biayaLain.reduce((s, x) => s + (Number(x.harga) || 0), 0)
   const reqSiap = requests.filter(r => r.status === 'disetujui')
+  // Daftar request dilipat untuk staff (mereka sering belanja kecil pakai kas kasir, tidak lewat request);
+  // owner yang biasa belanja dari request langsung melihat daftarnya.
+  const [bukaRequest, setBukaRequest] = useState(role === 'owner')
   const ringkasRequest = (r) => {
     const its = r.items || []
     return its.length === 1 ? `${its[0].nama} ${its[0].jumlah || ''} ${its[0].satuan || ''}`.trim() : `${its.length} barang`
@@ -2594,7 +2598,11 @@ function InputNotaView({ bahanBaku, showToast, loadData, logAudit, setView, user
 
       {reqSiap.length > 0 && (
         <div style={{ background: C.panel, border: `1px solid ${C.border}`, borderRadius: '12px', padding: '10px 12px', marginBottom: '12px' }}>
-          <div style={{ fontSize: '12px', fontWeight: 600, marginBottom: '6px' }}>🛒 Belanja ini untuk request yang mana?{requestIds.length ? ` (${requestIds.length} dipilih)` : ''}</div>
+          <div onClick={() => setBukaRequest(o => !o)} style={{ fontSize: '12px', fontWeight: 600, marginBottom: bukaRequest ? '6px' : 0, cursor: 'pointer', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '8px' }}>
+            <span>🛒 {bukaRequest ? 'Belanja ini untuk request yang mana?' : 'Kaitkan ke request order'}{requestIds.length ? ` (${requestIds.length} dipilih)` : bukaRequest ? '' : ` (${reqSiap.length} menunggu)`}</span>
+            <span style={{ color: C.text3, fontSize: '11px', fontWeight: 500 }}>{bukaRequest ? 'tutup ▴' : 'pilih ▾'}</span>
+          </div>
+          {bukaRequest && <>
           <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
             {reqSiap.map(r => (
               <button key={r.id} onClick={() => pakaiRequest(r)} style={{
@@ -2609,6 +2617,7 @@ function InputNotaView({ bahanBaku, showToast, loadData, logAudit, setView, user
           {reqSiap.length > 1 && requestIds.length < reqSiap.length && (
             <button onClick={() => kaitkanRequests(reqSiap.filter(r => !requestIds.includes(r.id)))} style={{ ...S.btn, marginTop: '6px', padding: '5px 10px', fontSize: '11px', background: 'transparent', color: C.text2, border: `1px dashed ${C.border}` }}>Pilih semua {reqSiap.length} request</button>
           )}
+          </>}
         </div>
       )}
 
