@@ -2050,6 +2050,12 @@ function InputNotaView({ bahanBaku, showToast, loadData, logAudit, setView, user
   const [tanggal, setTanggal] = useState(formatTanggal())
   const [jalur, setJalur] = useState('kecil')
   const [sumberDana, setSumberDana] = useState('kas_kasir')
+  // Isi per kemasan yang baru diketahui saat input (bahan_id -> angka), untuk barang yang di master belum punya
+  // qty_per_kemasan. Dipakai untuk konversi stok di nota ini dan disimpan ke master supaya berikutnya otomatis.
+  const [isiKemasan, setIsiKemasan] = useState({})
+  const isiPer = (ba) => Number(ba?.qty_per_kemasan) || Number(isiKemasan[ba?.id]) || 0
+  const satuanKemasan = (ba, satuan) => !!(ba?.kemasan && satuan && satuan.toLowerCase().includes(ba.kemasan.toLowerCase())
+    && String(ba.kemasan).toLowerCase() !== String(ba.satuan_dasar || '').toLowerCase())
   const [pakaiSumber2, setPakaiSumber2] = useState(false)   // nota dibayar dari dua sumber dana
   const [sumberDana2, setSumberDana2] = useState('shopeepay_tissa')
   const [jumlahSumber2, setJumlahSumber2] = useState('')
@@ -2224,6 +2230,9 @@ function InputNotaView({ bahanBaku, showToast, loadData, logAudit, setView, user
     // dibaca Claude pada tugas pagi, jadi statusnya harus "menunggu" dan total nota wajib diisi manual.
     const fotoBelumDibaca = mode === 'foto' && validItems.length === 0
     if (!fotoSaja && validItems.length === 0 && biayaValid.length === 0) { showToast('❌ Minimal 1 barang atau 1 biaya'); return }
+    // Beli per kemasan (Pack/Botol) tapi isi per kemasannya belum diketahui → minta diisi dulu supaya stok tidak salah satuan
+    const butuhIsi = validItems.map(i => bahanBaku.find(x => x.id == i.bahan_id)).find((b, k) => b && satuanKemasan(b, validItems[k].satuan) && !(isiPer(b) > 0))
+    if (butuhIsi) { showToast(`❌ Isi dulu 1 ${butuhIsi.kemasan} = berapa ${butuhIsi.satuan_dasar} untuk ${butuhIsi.nama}`); return }
     if (fotoBelumDibaca && !(Number(totalNota) > 0)) { showToast('❌ Isi "Total di nota" dulu, supaya nota ini ikut terhitung di Rekap Harian'); return }
     if (fotoBelumDibaca && Number(totalNota) < totalBiayaLain) { showToast('❌ Total di nota lebih kecil dari jumlah baris bukan stok. Cek lagi angkanya'); return }
     const totalEfektif = fotoBelumDibaca ? Number(totalNota) : totalHarga
@@ -2279,13 +2288,15 @@ function InputNotaView({ bahanBaku, showToast, loadData, logAudit, setView, user
         if (!b) continue
 
         // Cek apakah item dibeli dalam kemasan atau satuan_dasar
-        const isKemasan = b.qty_per_kemasan && b.kemasan &&
+        const qtyKemasan = isiPer(b)
+        const isKemasan = qtyKemasan > 0 && b.kemasan &&
           item.satuan && item.satuan.toLowerCase().includes(b.kemasan.toLowerCase())
+        const belajarIsi = isKemasan && !(Number(b.qty_per_kemasan) > 0)   // isi per kemasan baru diketahui → simpan ke master
 
         let stokTambah, hargaPerSatuan
         if (isKemasan) {
           // Beli dalam kemasan → konversi ke satuan_dasar
-          stokTambah = Number(item.jumlah) * b.qty_per_kemasan
+          stokTambah = Number(item.jumlah) * qtyKemasan
           hargaPerSatuan = Number(item.harga) / stokTambah
         } else {
           // Beli dalam satuan_dasar langsung
@@ -2302,6 +2313,7 @@ function InputNotaView({ bahanBaku, showToast, loadData, logAudit, setView, user
         await supabase.from('bahan_baku').update({
           stok_saat_ini: (b.stok_saat_ini || 0) + stokTambah,
           harga_per_satuan: hargaPerSatuan,
+          ...(belajarIsi ? { qty_per_kemasan: qtyKemasan } : {}),
         }).eq('id', b.id)
         await logAudit('belanja', newId, 'create', b.id, b.nama, {
           jumlah_input: item.jumlah, satuan_input: item.satuan,
@@ -2515,9 +2527,10 @@ function InputNotaView({ bahanBaku, showToast, loadData, logAudit, setView, user
 
       {items.map((item, idx) => {
         const ba = bahanBaku.find(x => x.id === item.bahan_id)
-        const hasKemasan = ba?.qty_per_kemasan && ba?.kemasan
-        const stokTambahPreview = hasKemasan && item.jumlah
-          ? Number(item.jumlah) * ba.qty_per_kemasan : null
+        const hasKemasan = isiPer(ba) > 0 && ba?.kemasan
+        const tanyaIsi = ba && satuanKemasan(ba, item.satuan) && !(Number(ba.qty_per_kemasan) > 0)   // beli per Pack tapi isi per Pack belum ada di master
+        const stokTambahPreview = hasKemasan && item.jumlah && satuanKemasan(ba, item.satuan)
+          ? Number(item.jumlah) * isiPer(ba) : null
         const hargaPerSatuanPreview = stokTambahPreview && item.harga
           ? (Number(item.harga) / stokTambahPreview) : null
 
@@ -2548,9 +2561,20 @@ function InputNotaView({ bahanBaku, showToast, loadData, logAudit, setView, user
               <input type="number" placeholder="Harga (Rp)" value={item.harga}
                 onChange={e => updateItem(idx, 'harga', e.target.value)} style={S.input} />
             </div>
-            {hasKemasan && (
+            {tanyaIsi && (
+              <div style={{ background: C.yellowBg, border: `1px solid ${C.yellowBorder}`, borderRadius: '6px', padding: '6px 10px', marginBottom: '4px' }}>
+                <div style={{ fontSize: '11px', color: C.yellow, marginBottom: '4px' }}>Isi per {ba.kemasan} belum ada di master. Lihat di kemasannya:</div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '12px' }}>
+                  <span>1 {ba.kemasan} =</span>
+                  <input type="number" inputMode="decimal" value={isiKemasan[ba.id] || ''} onChange={e => setIsiKemasan(p => ({ ...p, [ba.id]: e.target.value }))} placeholder="misal 250" style={{ ...S.input, width: '90px', padding: '6px 8px' }} />
+                  <span>{ba.satuan_dasar}</span>
+                </div>
+                <div style={{ fontSize: '10px', color: C.text3, marginTop: '4px' }}>Disimpan ke master saat nota disimpan, jadi berikutnya otomatis.</div>
+              </div>
+            )}
+            {hasKemasan && !tanyaIsi && (
               <div style={{ fontSize: '11px', color: C.text3, marginBottom: '4px' }}>
-                💡 Satuan kemasan: <strong>{ba.kemasan}</strong> (1 {ba.kemasan} = {ba.qty_per_kemasan} {ba.satuan_dasar})
+                💡 Satuan kemasan: <strong>{ba.kemasan}</strong> (1 {ba.kemasan} = {isiPer(ba)} {ba.satuan_dasar})
               </div>
             )}
             {stokTambahPreview && hargaPerSatuanPreview && (
