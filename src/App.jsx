@@ -682,7 +682,7 @@ function AppShell(props) {
     home: ['Home', 'home'], produksi: ['Produksi', 'pot'], histproduksi: ['Lap. Produksi', 'clipboard'],
     inputnota: ['Nota', 'receipt'], penjualan: ['Tutup Kasir', 'wallet'], pengeluaran: ['Kas Keluar', 'cash'],
     closing: ['Update Stok', 'clipboard'], stoklist: ['Stok', 'box'], waste: ['Waste', 'trash'],
-    historybelanja: ['Belanja', 'cart'], resep: ['Resep', 'book'], dashboard: ['Dashboard', 'chart'],
+    historybelanja: ['Riwayat Belanja', 'cart'], resep: ['Resep', 'book'], dashboard: ['Dashboard', 'chart'],
     rekap: ['Rekap Harian', 'calendar'], upload: ['Master', 'upload'], auditlog: ['Audit', 'list'], kelolauser: ['User', 'users'],
     request: ['Request', 'bag'], panduan: ['Panduan', 'book'],
   }
@@ -690,7 +690,8 @@ function AppShell(props) {
     ? ['home', 'penjualan', 'inputnota', 'rekap', 'request', 'dashboard', 'stoklist', 'histproduksi', 'historybelanja', 'pengeluaran', 'resep', 'upload', 'auditlog', 'kelolauser', 'panduan']
     // Staff: Home · Stok · Produksi · Request di menu bawah; sisanya di "Lainnya".
     // Update Stok juga bisa dibuka dari tombol di Home. Riwayat belanja tidak dipakai staff.
-    : ['home', 'stoklist', 'produksi', 'request', 'closing', ...(bisaPenjualan ? ['penjualan'] : []), 'inputnota', 'waste', 'pengeluaran', 'histproduksi', 'resep', 'panduan']
+    // Kas Keluar hanya untuk staff yang ditunjuk jadi kasir (bisa tutup kasir). Riwayat belanja staff tanpa harga.
+    : ['home', 'stoklist', 'produksi', 'request', 'closing', ...(bisaPenjualan ? ['penjualan', 'pengeluaran'] : []), 'inputnota', 'historybelanja', 'waste', 'histproduksi', 'resep', 'panduan']
   const primary = allMenus.slice(0, 4)               // 4 ikon di menu bawah + "Lainnya"
   const more = allMenus.slice(4)
   const go = (id) => { setView(id); setMoreOpen(false); window.scrollTo({ top: 0 }) }
@@ -1010,7 +1011,7 @@ function StaffHome({ bahanBaku, produksi, belanja, closing, penjualan, requests 
             </div>
             {adaNota ? (
               <div style={{ fontSize: '11px', color: C.green, marginTop: '1px' }}>
-                ✓ {notaHariIni.length} nota hari ini · {formatRupiah(notaHariIni.reduce((s, b) => s + (b.total_harga || 0), 0))}
+                ✓ {notaHariIni.length} nota hari ini{bisaPenjualan ? ` · ${formatRupiah(notaHariIni.reduce((s, b) => s + (b.total_harga || 0), 0))}` : ''}
               </div>
             ) : (
               <div style={{ fontSize: '11px', color: C.text3, marginTop: '1px' }}>Belum ada hari ini · kalau memang tidak ada, abaikan</div>
@@ -1038,7 +1039,7 @@ function StaffHome({ bahanBaku, produksi, belanja, closing, penjualan, requests 
             </div>
             {adaPenjualan ? (
               <div style={{ fontSize: '11px', color: C.green, marginTop: '1px' }}>
-                ✓ {formatRupiah(penjualanHariIni.total_omzet)} · oleh {penjualanHariIni.yang_input}
+                ✓ {bisaPenjualan ? formatRupiah(penjualanHariIni.total_omzet) : 'Sudah dilaporkan'} · oleh {penjualanHariIni.yang_input}
               </div>
             ) : (
               <div style={{ fontSize: '11px', color: C.text3, marginTop: '1px' }}>Diisi kasir setelah tutup · tidak perlu kirim ke WA lagi</div>
@@ -4009,7 +4010,9 @@ function WasteView({ bahanBaku, waste, showToast, loadData, logAudit, setView, u
 // =====================================================
 // HISTORY BELANJA
 // =====================================================
-function HistoryBelanjaView({ belanja, showToast, loadData }) {
+function HistoryBelanjaView({ belanja, showToast, loadData, role }) {
+  // Staff: hanya barang apa yang sudah dibeli, kapan, oleh siapa. Harga, total, sumber dana, foto nota = urusan owner.
+  const terbatas = role !== 'owner'
   const [filter, setFilter] = useState('month')
   const [selected, setSelected] = useState(null)
   const [fotoModal, setFotoModal] = useState(null)
@@ -4086,12 +4089,12 @@ function HistoryBelanjaView({ belanja, showToast, loadData }) {
         <div style={{ display: 'flex', gap: '8px', marginBottom: '14px', flexWrap: 'wrap' }}>
           <button onClick={() => { setSelected(null); setEditing(false); setConfirmHapus(false) }}
             style={{ ...S.btn, ...S.btnSecondary, fontSize: '12px', padding: '7px 12px' }}>← Kembali</button>
-          {!editing && (
+          {!editing && !terbatas && (
             isNotaEditable(selected.tanggal)
               ? <button onClick={() => startEdit(selected)} style={{ ...S.btn, fontSize: '12px', padding: '7px 12px', background: C.yellowBg, color: C.yellow, border: `1px solid ${C.yellowBorder}` }}>✏️ Edit</button>
               : <div style={{ fontSize: '11px', color: C.text3, padding: '7px 10px', background: C.panel2, borderRadius: '7px' }}>🔒 &gt;30 hari</div>
           )}
-          {!editing && (
+          {!editing && !terbatas && (
             <button onClick={() => setConfirmHapus(v => !v)}
               style={{ ...S.btn, fontSize: '12px', padding: '7px 12px', background: C.redBg, color: C.red, border: `1px solid ${C.redBorder}`, marginLeft: 'auto' }}>
               🗑️ Hapus nota
@@ -4184,10 +4187,10 @@ function HistoryBelanjaView({ belanja, showToast, loadData }) {
                 </div>
                 <span style={{ ...S.badge(colorMap[selected.jalur] || 'default') }}>{selected.jalur}</span>
               </div>
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px', marginBottom: selected.catatan ? '10px' : '0' }}>
+              {!terbatas && <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px', marginBottom: selected.catatan ? '10px' : '0' }}>
                 <div style={{ background: C.panel2, borderRadius: '8px', padding: '8px 10px' }}><div style={{ fontSize: '10px', color: C.text3 }}>Total belanja</div><div style={{ fontSize: '16px', fontWeight: 700, color: C.green }}>{formatRupiah(selected.total_harga)}</div></div>
                 <div style={{ background: C.panel2, borderRadius: '8px', padding: '8px 10px' }}><div style={{ fontSize: '10px', color: C.text3 }}>Sumber dana</div><div style={{ fontSize: '13px', fontWeight: 600, color: C.text }}>{sumberText(selected) || '-'}</div></div>
-              </div>
+              </div>}
               {selected.catatan && <div style={{ fontSize: '12px', color: C.text3, fontStyle: 'italic' }}>📝 {selected.catatan}</div>}
             </div>
             <div style={{ fontSize: '12px', fontWeight: 600, color: C.text3, marginBottom: '8px' }}>🛍️ {items.length} item yang dibeli:</div>
@@ -4199,14 +4202,14 @@ function HistoryBelanjaView({ belanja, showToast, loadData }) {
                     <div style={{ fontSize: '13px', fontWeight: 600, color: C.text }}>{item.nama}</div>
                     <div style={{ fontSize: '11px', color: C.text3, marginTop: '2px' }}>
                       {item.jumlah} {item.satuan}
-                      {h > 0 && <span style={{ marginLeft: '6px', background: C.greenLightBg, color: C.greenLight, fontSize: '10px', padding: '1px 6px', borderRadius: '99px' }}>{formatRupiah(h)}/{item.satuan}</span>}
+                      {h > 0 && !terbatas && <span style={{ marginLeft: '6px', background: C.greenLightBg, color: C.greenLight, fontSize: '10px', padding: '1px 6px', borderRadius: '99px' }}>{formatRupiah(h)}/{item.satuan}</span>}
                     </div>
                   </div>
-                  <div style={{ fontSize: '14px', fontWeight: 700, color: C.text, marginLeft: '10px' }}>{formatRupiah(item.harga)}</div>
+                  {!terbatas && <div style={{ fontSize: '14px', fontWeight: 700, color: C.text, marginLeft: '10px' }}>{formatRupiah(item.harga)}</div>}
                 </div>
               )
             })}
-            {(selected.biaya_lain || []).length > 0 && (
+            {(selected.biaya_lain || []).length > 0 && !terbatas && (
               <div style={{ background: C.panel, border: `1px solid ${C.border}`, borderRadius: '12px', padding: '12px 14px', marginBottom: '12px' }}>
                 <div style={{ fontSize: '12px', fontWeight: 600, color: C.text3, marginBottom: '6px' }}>🧻 Bukan stok di nota ini</div>
                 {selected.biaya_lain.map((x, i) => (
@@ -4216,7 +4219,7 @@ function HistoryBelanjaView({ belanja, showToast, loadData }) {
                 ))}
               </div>
             )}
-            {semuaFoto(selected.foto_nota, selected.foto_tambahan).length > 0 && (
+            {semuaFoto(selected.foto_nota, selected.foto_tambahan).length > 0 && !terbatas && (
               <div style={{ marginTop: '4px' }}>
                 <div style={{ fontSize: '12px', fontWeight: 600, color: C.text3, marginBottom: '8px' }}>📷 Foto nota{semuaFoto(selected.foto_nota, selected.foto_tambahan).length > 1 ? ` (${semuaFoto(selected.foto_nota, selected.foto_tambahan).length})` : ''}:</div>
                 <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
@@ -4240,15 +4243,15 @@ function HistoryBelanjaView({ belanja, showToast, loadData }) {
   return (
     <div>
       <h2 style={{ fontSize: '17px', fontWeight: 600, marginBottom: '4px' }}>📜 History Belanja</h2>
-      <p style={{ fontSize: '12px', color: C.text3, marginBottom: '14px' }}>Tap nota untuk lihat & edit detail · {filtered.length} transaksi</p>
+      <p style={{ fontSize: '12px', color: C.text3, marginBottom: '14px' }}>{terbatas ? 'Barang yang sudah dibeli. Tap untuk lihat rinciannya' : 'Tap nota untuk lihat & edit detail'} · {filtered.length} {terbatas ? 'belanja' : 'transaksi'}</p>
       <div style={{ display: 'flex', gap: '6px', marginBottom: '12px' }}>
         {[['today','Hari ini'],['week','Minggu ini'],['month','Bulan ini']].map(([k,l]) => (
           <button key={k} onClick={() => setFilter(k)} style={{ padding: '5px 11px', fontSize: '11px', borderRadius: '99px', border: `1px solid ${C.border}`, cursor: 'pointer', background: filter === k ? C.text : 'transparent', color: filter === k ? C.panel : C.text2 }}>{l}</button>
         ))}
       </div>
-      <div style={{ background: C.greenBg, border: `1px solid ${C.greenBorder}`, padding: '8px 12px', borderRadius: '8px', fontSize: '12px', marginBottom: '12px' }}>
+      {!terbatas && <div style={{ background: C.greenBg, border: `1px solid ${C.greenBorder}`, padding: '8px 12px', borderRadius: '8px', fontSize: '12px', marginBottom: '12px' }}>
         💰 Total: <strong style={{ color: C.green }}>{formatRupiah(total)}</strong> · {filtered.length} transaksi
-      </div>
+      </div>}
       {filtered.length === 0 && <div style={{ textAlign: 'center', padding: '24px', color: C.text3, fontSize: '13px' }}>Belum ada belanja di periode ini</div>}
       {filtered.map(b => (
         <div key={b.id} onClick={() => setSelected(b)} style={{ background: C.panel, border: `1px solid ${C.border}`, borderRadius: '10px', padding: '12px 14px', marginBottom: '8px', cursor: 'pointer', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
@@ -4263,7 +4266,7 @@ function HistoryBelanjaView({ belanja, showToast, loadData }) {
             </div>
           </div>
           <div style={{ textAlign: 'right', marginLeft: '12px', flexShrink: 0 }}>
-            <div style={{ fontSize: '14px', fontWeight: 700, color: C.green }}>{formatRupiah(b.total_harga)}</div>
+            {!terbatas && <div style={{ fontSize: '14px', fontWeight: 700, color: C.green }}>{formatRupiah(b.total_harga)}</div>}
             <div style={{ fontSize: '10px', color: C.text3, marginTop: '2px' }}>tap detail →</div>
           </div>
         </div>

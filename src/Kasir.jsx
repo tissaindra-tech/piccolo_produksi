@@ -214,8 +214,9 @@ export function PengeluaranKasirView({ showToast, userName, setUserName, loadDat
   }
 
   const bulan = bulanIni(formatTanggal())
-  // Staff hanya melihat catatan yang dia input sendiri; owner melihat semuanya
-  const visible = isOwner ? list : list.filter(p => p.yang_input === userName)
+  // Kasir (staff) hanya melihat uang keluar HARI INI, untuk cocokkan laci; riwayat hari lain hanya owner
+  const hariIni = formatTanggal()
+  const visible = isOwner ? list : list.filter(p => p.tanggal === hariIni)
   const listBulan = visible.filter(p => bulanIni(p.tanggal) === bulan)
   const totalBulan = listBulan.reduce((s, p) => s + num(p.jumlah), 0)
   const perKategori = {}
@@ -301,7 +302,7 @@ export function PengeluaranKasirView({ showToast, userName, setUserName, loadDat
       {tab === 'riwayat' && (
         <div>
           <div style={{ background: C.redBg, border: `1px solid ${C.redBorder}`, borderRadius: '10px', padding: '12px 14px', marginBottom: '10px' }}>
-            <div style={{ fontSize: '11px', color: C.red }}>{isOwner ? 'Total pengeluaran kasir bulan ini' : 'Total yang kamu input bulan ini'}</div>
+            <div style={{ fontSize: '11px', color: C.red }}>{isOwner ? 'Total pengeluaran kasir bulan ini' : 'Total uang keluar hari ini'}</div>
             <div style={{ fontSize: '20px', fontWeight: 700, color: C.red }}>{formatRupiah(totalBulan)}</div>
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', marginTop: '6px' }}>
               {Object.entries(perKategori).sort((a, b) => b[1] - a[1]).map(([k, v]) => (
@@ -309,7 +310,7 @@ export function PengeluaranKasirView({ showToast, userName, setUserName, loadDat
               ))}
             </div>
           </div>
-          {!isOwner && <div style={{ fontSize: '11px', color: C.text3, marginBottom: '8px' }}>Hanya catatan yang kamu input sendiri yang tampil di sini.</div>}
+          {!isOwner && <div style={{ fontSize: '11px', color: C.text3, marginBottom: '8px' }}>Hanya uang keluar hari ini yang tampil di sini. Riwayat hari lain hanya untuk owner.</div>}
           {visible.length === 0 && <div style={{ textAlign: 'center', padding: '24px', color: C.text3, fontSize: '13px' }}>Belum ada pengeluaran tercatat.</div>}
           {visible.map(p => (
             <div key={p.id} style={{ background: C.panel, border: `1px solid ${C.border}`, borderRadius: '10px', padding: '11px 14px', marginBottom: '8px' }}>
