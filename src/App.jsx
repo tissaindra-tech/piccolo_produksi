@@ -5,6 +5,7 @@ import { C, S, Icon, uploadFotoToStorage, compressImage, salinKeDrive, setDriveC
 import { kirimKeDrive } from './nota'
 import { RequestBelanjaView } from './Request'
 import { PanduanView } from './Panduan'
+import { BarangMasukView, notaPerluDicek } from './BarangMasuk'
 import { semuaFoto } from './Kasir'
 import { PengeluaranKasirView, RekapHarianView, TalanganCard } from './Kasir'
 import { PenjualanView } from './TutupKasir'
@@ -684,14 +685,14 @@ function AppShell(props) {
     closing: ['Update Stok', 'clipboard'], stoklist: ['Stok', 'box'], waste: ['Waste', 'trash'],
     historybelanja: ['Riwayat Belanja', 'cart'], resep: ['Resep', 'book'], dashboard: ['Dashboard', 'chart'],
     rekap: ['Rekap Harian', 'calendar'], upload: ['Master', 'upload'], auditlog: ['Audit', 'list'], kelolauser: ['User', 'users'],
-    request: ['Request', 'bag'], panduan: ['Panduan', 'book'],
+    request: ['Request', 'bag'], panduan: ['Panduan', 'book'], barangmasuk: ['Barang Masuk', 'cart'],
   }
   const allMenus = role === 'owner'
-    ? ['home', 'penjualan', 'inputnota', 'rekap', 'request', 'dashboard', 'stoklist', 'histproduksi', 'historybelanja', 'pengeluaran', 'resep', 'upload', 'auditlog', 'kelolauser', 'panduan']
+    ? ['home', 'penjualan', 'inputnota', 'rekap', 'request', 'dashboard', 'stoklist', 'histproduksi', 'historybelanja', 'barangmasuk', 'pengeluaran', 'resep', 'upload', 'auditlog', 'kelolauser', 'panduan']
     // Staff: Home · Stok · Produksi · Request di menu bawah; sisanya di "Lainnya".
     // Update Stok juga bisa dibuka dari tombol di Home. Riwayat belanja tidak dipakai staff.
     // Kas Keluar hanya untuk staff yang ditunjuk jadi kasir (bisa tutup kasir). Riwayat belanja staff tanpa harga.
-    : ['home', 'stoklist', 'produksi', 'request', 'closing', ...(bisaPenjualan ? ['penjualan', 'pengeluaran'] : []), 'inputnota', 'historybelanja', 'waste', 'resep', 'panduan']
+    : ['home', 'stoklist', 'produksi', 'request', 'closing', 'barangmasuk', ...(bisaPenjualan ? ['penjualan', 'pengeluaran'] : []), 'inputnota', 'waste', 'resep', 'panduan']
   const primary = allMenus.slice(0, 4)               // 4 ikon di menu bawah + "Lainnya"
   const more = allMenus.slice(4)
   const go = (id) => { setView(id); setMoreOpen(false); window.scrollTo({ top: 0 }) }
@@ -755,6 +756,7 @@ function AppShell(props) {
             : <TabSkeleton label="waste" />
         )}
         {view === 'historybelanja' && <HistoryBelanjaView {...props} />}
+        {view === 'barangmasuk' && <BarangMasukView {...props} />}
         {view === 'dashboard' && <OwnerDashboardView {...props} />}
         {view === 'upload' && <UploadMasterView {...props} />}
         {view === 'kelolauser' && <KelolaUserView {...props} />}
@@ -829,6 +831,7 @@ function StaffHome({ bahanBaku, produksi, belanja, closing, penjualan, requests 
   // Nota hari ini
   const notaHariIni = belanja.filter(b => b.tanggal === today)
   const adaNota = notaHariIni.length > 0
+  const belumDicek = belanja.filter(notaPerluDicek).length   // barang belanjaan yang belum dicek saat datang
 
   // Laporan penjualan hari ini (kasir)
   const penjualanHariIni = (penjualan || []).find(p => p.tanggal === today)
@@ -991,6 +994,17 @@ function StaffHome({ bahanBaku, produksi, belanja, closing, penjualan, requests 
           </div>
           <span style={{ fontSize: '11px', color: C.text3 }}>→</span>
         </div>
+
+        {belumDicek > 0 && (
+          <div onClick={() => setView('barangmasuk')} style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '10px 0', borderBottom: `1px solid ${C.panel2}`, cursor: 'pointer' }}>
+            <div style={{ width: '22px', height: '22px', borderRadius: '50%', flexShrink: 0, border: `2px solid ${C.yellowBorder}`, background: C.yellowBg, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '11px', fontWeight: 700, color: C.yellow }}>{belumDicek}</div>
+            <div style={{ flex: 1 }}>
+              <div style={{ fontSize: '13px', fontWeight: 500, color: C.text }}>Barang masuk belum dicek</div>
+              <div style={{ fontSize: '11px', color: C.text3, marginTop: '1px' }}>Cocokkan jumlah dan kondisi barang yang datang</div>
+            </div>
+            <span style={{ fontSize: '11px', color: C.text3 }}>→</span>
+          </div>
+        )}
 
         {/* Task 3 — Uang keluar / nota */}
         <div onClick={() => setView('pengeluaran')} style={{
@@ -4275,6 +4289,8 @@ function HistoryBelanjaView({ belanja, showToast, loadData, role }) {
             <div style={{ fontSize: '11px', color: C.text3, marginTop: '3px', display: 'flex', gap: '6px', alignItems: 'center', flexWrap: 'wrap' }}>
               {b.status_baca === 'menunggu' && <span style={S.badge('yellow')}>menunggu dibaca</span>}
               <span style={S.badge(colorMap[b.jalur] || 'default')}>{b.jalur}</span>
+              {b.diterima_status === 'belum' && b.status_baca !== 'menunggu' && <span style={S.badge('yellow')}>belum dicek</span>}
+              {b.diterima_status === 'selesai' && ((b.diterima_items || []).some(h => h.kondisi !== 'baik') ? <span style={S.badge('red')}>⚠ masalah saat diterima</span> : <span style={S.badge('green')}>✓ diterima</span>)}
               <span>{formatTanggalID(b.tanggal)}</span>
               <span>·</span><span>{b.yang_belanja || '-'}</span>
               <span>·</span><span>{b.items?.length || 0} item</span>
