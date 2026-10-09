@@ -643,7 +643,7 @@ function AppShell(props) {
     request: ['Request', 'bag'],
   }
   const allMenus = role === 'owner'
-    ? ['home', 'penjualan', 'inputnota', 'rekap', 'request', 'dashboard', 'stoklist', 'historybelanja', 'pengeluaran', 'resep', 'upload', 'auditlog', 'kelolauser']
+    ? ['home', 'penjualan', 'inputnota', 'rekap', 'request', 'dashboard', 'stoklist', 'histproduksi', 'historybelanja', 'pengeluaran', 'resep', 'upload', 'auditlog', 'kelolauser']
     : ['home', 'closing', 'produksi', 'pengeluaran', 'request', ...(bisaPenjualan ? ['penjualan'] : []), 'stoklist', 'waste', 'inputnota', 'histproduksi', 'historybelanja', 'resep']
   const primary = allMenus.slice(0, 4)               // 4 ikon di menu bawah + "Lainnya"
   const more = allMenus.slice(4)
@@ -1393,7 +1393,7 @@ function ProduksiView({ bahanBaku, showToast, loadData, logAudit, setView, userN
     dibuatSendiri(b) && (b.divisi === divisi || b.divisi === 'Both') && b.is_active
   ).map(b => ({ value: b.id, label: b.nama }))
 
-  const bahanOptions = bahanBaku.filter(b => b.kategori === 'mentah' && b.is_active)
+  const bahanOptions = bahanBaku.filter(b => (b.kategori === 'mentah' || b.kategori === 'produksi' || b.kategori === 'jadi') && b.is_active)   // mentah + hasil produksi lain + barang jadi
     .map(b => ({ value: b.id, label: b.nama, stock: b.stok_saat_ini, satuan: b.satuan_dasar }))
 
   const selectedMenu = bahanBaku.find(b => b.id == menuId)
@@ -1712,8 +1712,58 @@ function HistoryProduksiView({ produksi, bahanBaku, showToast, loadData, logAudi
   const [editCatatan, setEditCatatan] = useState('')
   const [editFoto, setEditFoto] = useState('')
 
-  const filtered = produksi.filter(p => filterDiv === 'all' || p.menu_kategori === filterDiv)
+  // Review bulanan: data diambil langsung per bulan (prop `produksi` hanya 60 batch terakhir)
+  const [bulan, setBulan] = useState(formatTanggal().slice(0, 7))   // 'YYYY-MM'
+  const [dataBulan, setDataBulan] = useState(null)
+  useEffect(() => {
+    let batal = false
+    const mulai = bulan + '-01'
+    const d = new Date(bulan + '-01T00:00:00'); d.setMonth(d.getMonth() + 1)
+    const selesai = d.toISOString().slice(0, 10)
+    supabase.from('produksi').select('*').gte('tanggal', mulai).lt('tanggal', selesai).order('created_at', { ascending: false })
+      .then(({ data }) => { if (!batal) setDataBulan(data || []) })
+    return () => { batal = true }
+  }, [bulan, produksi])
+  const sumber = dataBulan || produksi
+  const filtered = sumber.filter(p => filterDiv === 'all' || p.menu_kategori === filterDiv)
   const totalCOGS = filtered.reduce((s, p) => s + (p.total_cogs || 0), 0)
+  const selesaiSaja = filtered.filter(p => p.status !== 'proses')
+
+  // Ringkasan per menu: batch, total hasil, total porsi, COGS, rata-rata COGS/porsi
+  const ringkasan = Object.values(selesaiSaja.reduce((acc, p) => {
+    const k = p.menu_id || p.menu_nama
+    const b = bahanBaku.find(x => x.id === p.menu_id)
+    const r = acc[k] || (acc[k] = { nama: p.menu_nama, kode: b?.kode_accurate || '', satuan: b?.satuan_dasar || '', divisi: p.menu_kategori, batch: 0, hasil: 0, porsi: 0, cogs: 0 })
+    r.batch += 1; r.hasil += Number(p.hasil_pcs) || 0; r.porsi += Number(p.hasil_porsi) || 0; r.cogs += Number(p.total_cogs) || 0
+    return acc
+  }, {})).sort((a, b) => b.cogs - a.cogs)
+
+  // Pemakaian bahan sebulan (untuk Accurate: bahan keluar dari persediaan ke produksi)
+  const pakaiBahan = Object.values(selesaiSaja.reduce((acc, p) => {
+    (Array.isArray(p.bahan_baku) ? p.bahan_baku : []).forEach(b => {
+      const r = acc[b.bahan_id] || (acc[b.bahan_id] = { nama: b.nama, kode: bahanBaku.find(x => x.id === b.bahan_id)?.kode_accurate || '', satuan: b.satuan, jumlah: 0, nilai: 0 })
+      r.jumlah += Number(b.jumlah_satuan_dasar ?? b.jumlah) || 0; r.nilai += Number(b.cogs_bahan) || 0
+    })
+    return acc
+  }, {})).sort((a, b) => b.nilai - a.nilai)
+
+  const exportBulan = () => {
+    const wb = XLSX.utils.book_new()
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(ringkasan.map(r => ({
+      'Kode Accurate': r.kode, Menu: r.nama, Divisi: r.divisi, Batch: r.batch, 'Total Hasil': r.hasil, Satuan: r.satuan, 'Total Porsi': r.porsi,
+      'Total COGS': Math.round(r.cogs), 'COGS / Porsi': r.porsi ? Math.round(r.cogs / r.porsi) : '',
+    }))), 'Ringkasan Produksi')
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(pakaiBahan.map(r => ({
+      'Kode Accurate': r.kode, Bahan: r.nama, 'Jumlah Terpakai': Math.round(r.jumlah * 100) / 100, Satuan: r.satuan, 'Nilai (Rp)': Math.round(r.nilai),
+    }))), 'Pemakaian Bahan')
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(selesaiSaja.map(p => ({
+      Tanggal: p.tanggal, Menu: p.menu_nama, Divisi: p.menu_kategori, Hasil: p.hasil_pcs, Porsi: p.hasil_porsi,
+      'Total COGS': Math.round(p.total_cogs || 0), 'COGS / Porsi': Math.round(p.cogs_per_porsi || 0), 'Yang Masak': p.yang_masak, Catatan: p.catatan || '',
+      Bahan: (Array.isArray(p.bahan_baku) ? p.bahan_baku : []).map(b => `${b.nama} ${b.jumlah} ${b.satuan_input || b.satuan}`).join('; '),
+    }))), 'Per Batch')
+    XLSX.writeFile(wb, `Produksi_Piccolo_${bulan}.xlsx`)
+    showToast('✅ File laporan produksi diunduh')
+  }
 
   const startEdit = (p) => {
     const bahanArr = Array.isArray(p.bahan_baku) ? p.bahan_baku : []
@@ -1820,7 +1870,7 @@ function HistoryProduksiView({ produksi, bahanBaku, showToast, loadData, logAudi
     const menuBahan = bahanBaku.find(b => b.id === p.menu_id)
     const satuanMenu = menuBahan?.satuan_dasar || ''
     const isSimple = ['porsi', 'gelas'].includes(satuanMenu)
-    const bahanOptions = bahanBaku.filter(b => b.kategori === 'mentah' && b.is_active)
+    const bahanOptions = bahanBaku.filter(b => (b.kategori === 'mentah' || b.kategori === 'produksi' || b.kategori === 'jadi') && b.is_active)   // mentah + hasil produksi lain + barang jadi
       .map(b => ({ value: b.id, label: b.nama, stock: b.stok_saat_ini, satuan: b.satuan_dasar }))
 
     const updateBahan = (idx, field, val) => {
@@ -1997,7 +2047,12 @@ function HistoryProduksiView({ produksi, bahanBaku, showToast, loadData, logAudi
   return (
     <div>
       <h2 style={{ fontSize: '17px', fontWeight: 600, marginBottom: '4px' }}>📋 Laporan Produksi</h2>
-      <p style={{ fontSize: '12px', color: C.text3, marginBottom: '12px' }}>Tap item untuk lihat detail, edit, atau hapus</p>
+      <p style={{ fontSize: '12px', color: C.text3, marginBottom: '12px' }}>Ringkasan per bulan untuk review & Accurate. Tap batch untuk detail, edit, atau hapus.</p>
+
+      <div style={{ display: 'flex', gap: '6px', marginBottom: '10px', alignItems: 'center' }}>
+        <input type="month" value={bulan} onChange={e => setBulan(e.target.value)} style={{ ...S.input, flex: 1 }} />
+        <button onClick={exportBulan} disabled={!selesaiSaja.length} style={{ ...S.btn, ...S.btnPrimary, fontSize: '12px', padding: '9px 12px', opacity: selesaiSaja.length ? 1 : 0.5 }}>📥 Excel</button>
+      </div>
 
       <div style={{ display: 'flex', gap: '6px', marginBottom: '10px' }}>
         {[['all', 'Semua'], ['Kitchen', 'Kitchen'], ['Bar', 'Bar']].map(([k, l]) => (
@@ -2014,12 +2069,28 @@ function HistoryProduksiView({ produksi, bahanBaku, showToast, loadData, logAudi
         <div style={{ background: C.greenBg, padding: '10px 12px', borderRadius: '8px', marginBottom: '12px', fontSize: '12px' }}>
           <span style={{ color: C.text3 }}>{filtered.length} batch · Total COGS: </span>
           <strong style={{ color: C.green }}>{formatRupiah(totalCOGS)}</strong>
+          {filtered.length !== selesaiSaja.length && <span style={{ color: C.text3 }}> · {filtered.length - selesaiSaja.length} masih proses</span>}
+        </div>
+      )}
+
+      {ringkasan.length > 0 && (
+        <div style={{ background: C.panel, border: `1px solid ${C.border}`, borderRadius: '12px', padding: '12px 14px', marginBottom: '12px' }}>
+          <div style={{ fontSize: '13px', fontWeight: 600, marginBottom: '8px' }}>📊 Ringkasan per menu</div>
+          {ringkasan.map(r => (
+            <div key={r.nama} style={{ display: 'flex', justifyContent: 'space-between', gap: '8px', fontSize: '12px', padding: '5px 0', borderTop: `1px solid ${C.panel2}` }}>
+              <div style={{ flex: 1 }}>
+                <div style={{ fontWeight: 600 }}>{r.nama}</div>
+                <div style={{ fontSize: '11px', color: C.text3 }}>{r.batch} batch · {r.hasil} {r.satuan}{r.porsi ? ` · ${r.porsi} porsi` : ''}{r.porsi ? ` · ${formatRupiah(Math.round(r.cogs / r.porsi))}/porsi` : ''}</div>
+              </div>
+              <div style={{ fontWeight: 600, color: C.green, whiteSpace: 'nowrap' }}>{formatRupiah(Math.round(r.cogs))}</div>
+            </div>
+          ))}
         </div>
       )}
 
       {filtered.length === 0 && (
         <div style={{ textAlign: 'center', padding: '30px 20px', color: C.text3, fontSize: '13px' }}>
-          Belum ada data produksi.
+          {dataBulan === null ? 'Memuat...' : 'Belum ada produksi di bulan ini.'}
         </div>
       )}
 
