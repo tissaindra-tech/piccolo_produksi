@@ -497,7 +497,11 @@ export default function App() {
   const props = {
     role, userName, setUserName, view, setView, currentUser, bisaPenjualan, opname, saveSetting, settings,
     bahanBaku, produksi, belanja, closing, waste, auditLog, penjualan, requests, setRequests, requestDraft, setRequestDraft,
-    mintaBeli: (b) => { setRequestDraft(b); setView('request'); window.scrollTo({ top: 0 }) },
+    // Stok rendah: bahan beli → form Request; prepack → menu Produksi (dibuat sendiri di dapur/bar)
+    mintaBeli: (b) => {
+      if (b?.kategori === 'prepack') { showToast(`👨‍🍳 ${b.nama} dibuat sendiri, bukan dibeli. Catat di Produksi.`); setView('produksi'); window.scrollTo({ top: 0 }); return }
+      setRequestDraft(b); setView('request'); window.scrollTo({ top: 0 })
+    },
     loadData, showToast, logAudit, lazyLoaded,
     daysSinceClosing, isLocked,
     handleLogout: () => { setRole(null); setCurrentUser(null); setUserName(''); setView('home'); setLazyLoaded({}); sudahMuat.current = false }
@@ -1005,7 +1009,9 @@ function StaffHome({ bahanBaku, produksi, belanja, closing, penjualan, requests 
           display: 'flex', justifyContent: 'space-between', alignItems: 'center', cursor: 'pointer',
         }}>
           <span style={{ fontSize: '12px', color: C.red }}>
-            🔴 <strong>{stokRendah.length} bahan stok rendah</strong> — perlu segera dibeli
+            🔴 <strong>{stokRendah.length} stok rendah</strong>
+            {(() => { const beli = stokRendah.filter(b => b.kategori !== 'prepack').length, buat = stokRendah.length - beli
+              return <> — {beli ? `${beli} perlu dibeli` : ''}{beli && buat ? ', ' : ''}{buat ? `${buat} perlu diproduksi` : ''}</> })()}
           </span>
           <span style={{ fontSize: '11px', color: C.red }}>Lihat →</span>
         </div>
@@ -1246,7 +1252,7 @@ function OwnerHome(props) {
                           <div style={{ fontSize: '10px', color: C.text3 }}>min {b.stok_minimum} {b.satuan_dasar}</div>
                         </div>
                       </div>
-                      <button onClick={() => { setShowStokLow(false); props.mintaBeli && props.mintaBeli(b) }} style={{ marginTop: '8px', ...S.btn, ...S.btnPrimary, padding: '6px 10px', fontSize: '11px' }}>🛒 Request order</button>
+                      <button onClick={() => { setShowStokLow(false); props.mintaBeli && props.mintaBeli(b) }} style={{ marginTop: '8px', ...S.btn, ...S.btnPrimary, padding: '6px 10px', fontSize: '11px' }}>{b.kategori === 'prepack' ? '👨‍🍳 Perlu produksi' : '🛒 Request order'}</button>
                       <div style={{ marginTop: '8px', background: C.redBorder, borderRadius: '99px', height: '4px', overflow: 'hidden' }}>
                         <div style={{ width: `${Math.min(pct, 100)}%`, height: '100%', background: C.red, borderRadius: '99px' }} />
                       </div>
@@ -2153,7 +2159,7 @@ function InputNotaView({ bahanBaku, showToast, loadData, logAudit, setView, user
       const base64Data = base64ImageFull.split(',')[1]
       const mediaType  = base64ImageFull.split(';')[0].split(':')[1] || 'image/jpeg'
       const master = bahanBaku
-        .filter(b => b.is_active !== false)
+        .filter(b => b.is_active !== false && b.kategori !== 'prepack')   // prepack dibuat sendiri, tidak pernah ada di nota belanja
         .map(b => ({ id: String(b.id), nama: b.nama, satuan_dasar: b.satuan_dasar, kemasan: b.kemasan || null, qty_per_kemasan: b.qty_per_kemasan || null }))
 
       const driveP = driveUrl
@@ -2534,7 +2540,7 @@ function InputNotaView({ bahanBaku, showToast, loadData, logAudit, setView, user
             )}
             <div style={{ display: 'grid', gridTemplateColumns: '2fr auto', gap: '6px', marginBottom: '6px', alignItems: 'end' }}>
               <SearchableSelect
-                options={bahanBaku.map(b => ({ value: b.id, label: b.nama + (b.kategori !== 'mentah' ? ` (${b.kategori})` : ''), stock: b.stok_saat_ini, satuan: b.satuan_dasar }))}
+                options={bahanBaku.filter(b => b.kategori !== 'prepack' && b.is_active !== false).map(b => ({ value: b.id, label: b.nama + (b.kategori !== 'mentah' ? ` (${b.kategori})` : ''), stock: b.stok_saat_ini, satuan: b.satuan_dasar }))}
                 value={item.bahan_id}
                 onChange={val => updateItem(idx, 'bahan_id', val)}
                 placeholder={item.namaAI ? `Pilih barang untuk "${item.namaAI}"` : 'Cari nama barang...'}
@@ -2886,7 +2892,7 @@ function ClosingView({ bahanBaku, closing, showToast, loadData, logAudit, userNa
                   {b.stok_saat_ini} {b.satuan_dasar}
                 </div>
                 {b.stok_saat_ini < b.stok_minimum && (
-                  <button onClick={() => mintaBeli && mintaBeli(b)} style={{ marginTop: '2px', fontSize: '10px', fontWeight: 700, color: C.text, background: C.sun, border: 'none', borderRadius: '99px', padding: '3px 8px', cursor: 'pointer' }}>⚠ rendah · request order</button>
+                  <button onClick={() => mintaBeli && mintaBeli(b)} style={{ marginTop: '2px', fontSize: '10px', fontWeight: 700, color: C.text, background: C.sun, border: 'none', borderRadius: '99px', padding: '3px 8px', cursor: 'pointer' }}>{b.kategori === 'prepack' ? '⚠ rendah · perlu produksi' : '⚠ rendah · request order'}</button>
                 )}
               </div>
             </div>
@@ -3489,7 +3495,7 @@ function StokListView({ bahanBaku, showToast, loadData, logAudit, userName, role
                 <button onClick={() => mintaBeli(b)} style={{
                   flex: 2, padding: '6px', fontSize: '11px', fontWeight: 700, borderRadius: '6px',
                   background: C.sun, color: C.text, border: `1px solid ${C.sun}`, cursor: 'pointer',
-                }}>🛒 Request order</button>
+                }}>{b.kategori === 'prepack' ? '👨‍🍳 Perlu produksi' : '🛒 Request order'}</button>
               )}
               <button onClick={() => setModal({ mode: 'stok', initial: b })} style={{
                 flex: 2, padding: '6px', fontSize: '11px', fontWeight: 600, borderRadius: '6px',
@@ -5100,7 +5106,7 @@ function OwnerDashboardView({ bahanBaku, produksi, belanja, closing, waste, audi
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
                       <div style={{ flex: 1 }}>
                         <div style={{ fontSize: '13px', fontWeight: 600 }}>{b.nama}</div>
-                        <div style={{ fontSize: '11px', color: C.text3, marginTop: '2px' }}>{b.kategori} · {b.divisi}</div>
+                        <div style={{ fontSize: '11px', color: C.text3, marginTop: '2px' }}>{b.kategori} · {b.divisi} · {b.kategori === 'prepack' ? '👨‍🍳 perlu produksi' : '🛒 perlu dibeli'}</div>
                       </div>
                       <div style={{ textAlign: 'right', marginLeft: '10px' }}>
                         <div style={{ fontSize: '15px', fontWeight: 700, color: C.red }}>{b.stok_saat_ini} {b.satuan_dasar}</div>

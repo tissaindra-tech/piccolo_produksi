@@ -33,8 +33,9 @@ export function RequestBelanjaView({ bahanBaku = [], requests = [], setRequests,
   // Ubah satu request langsung di layar tanpa muat ulang semua data (daftar lain tetap terlihat, tidak ada layar loading).
   const ubahLokal = (id, patch) => setRequests && setRequests(prev => prev.map(x => x.id === id ? { ...x, ...patch } : x))
 
-  // Semua barang aktif yang bisa dibeli: mentah, prepack, maupun barang jadi (Indomie, susu kedelai botol)
-  const mentah = bahanBaku.filter(b => b.is_active !== false)
+  // Barang yang bisa dibeli: mentah dan barang jadi (Indomie, susu kedelai botol).
+  // Prepack (ayam kremes, egg mayo, kuah bakso, french fries...) dibuat sendiri lewat menu Produksi, bukan di-request.
+  const mentah = bahanBaku.filter(b => b.is_active !== false && b.kategori !== 'prepack')
   const stokRendah = mentah.filter(b => Number(b.stok_saat_ini) < Number(b.stok_minimum)).slice(0, 8)
   const hasil = cari.trim()
     ? mentah.filter(b => b.nama.toLowerCase().includes(cari.toLowerCase()) && !rows.some(r => r.bahan_id === b.id)).slice(0, 8)
