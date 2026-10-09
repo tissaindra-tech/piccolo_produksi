@@ -250,12 +250,18 @@ export function RequestBelanjaView({ bahanBaku = [], requests = [], setRequests,
           {!isOwner && r.status === 'menunggu' && r.dibuat_oleh === userName && (
             <button onClick={() => batalkan(r)} disabled={!!sibuk[r.id]} style={{ ...S.btn, background: 'transparent', color: C.text3, border: `1px dashed ${C.border}`, padding: '6px 10px', fontSize: '11px', marginTop: '8px', opacity: sibuk[r.id] ? 0.6 : 1 }}>{sibuk[r.id] ? 'Membatalkan...' : 'Batalkan request'}</button>
           )}
+          {r.status === 'disetujui' && (r.items || []).some(i => dibuatSendiri(bahanBaku.find(x => String(x.id) === String(i.bahan_id)))) && (
+            <div style={{ fontSize: '11px', color: C.yellow, background: C.yellowBg, border: `1px solid ${C.yellowBorder}`, borderRadius: '6px', padding: '5px 8px', marginTop: '8px' }}>
+              👨‍🍳 Ada barang kategori produksi/prepack di request ini. Barang itu dibuat sendiri lewat Produksi, bukan dibeli. Request lama ini bisa dibatalkan.
+            </div>
+          )}
           {r.status === 'disetujui' && (
             <div style={{ display: 'flex', gap: '6px', marginTop: '8px' }}>
               <button onClick={() => tandaiDibeli(r)} disabled={!!sibuk[r.id]} style={{ ...S.btn, ...S.btnSuccess, flex: 1, padding: '8px 12px', fontSize: '12px', opacity: sibuk[r.id] ? 0.6 : 1 }}>
                 {sibuk[r.id] ? 'Menyimpan...' : '✓ Tandai sudah dibeli'}
               </button>
               {!isOwner && <button onClick={() => setView('inputnota')} style={{ ...S.btn, ...S.btnPrimary, padding: '8px 12px', fontSize: '12px' }}>Input nota →</button>}
+              {isOwner && <button onClick={() => window.confirm(`Batalkan request ${r.dibuat_oleh}?`) && batalkan(r)} disabled={!!sibuk[r.id]} style={{ ...S.btn, background: 'transparent', color: C.text3, border: `1px dashed ${C.border}`, padding: '8px 12px', fontSize: '12px' }}>Batalkan</button>}
             </div>
           )}
         </div>
