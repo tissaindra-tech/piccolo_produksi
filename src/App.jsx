@@ -688,7 +688,11 @@ function AppShell(props) {
   }
   const allMenus = role === 'owner'
     ? ['home', 'penjualan', 'inputnota', 'rekap', 'request', 'dashboard', 'stoklist', 'histproduksi', 'historybelanja', 'pengeluaran', 'resep', 'upload', 'auditlog', 'kelolauser', 'panduan']
-    : ['home', 'closing', 'produksi', 'pengeluaran', 'request', ...(bisaPenjualan ? ['penjualan'] : []), 'stoklist', 'waste', 'inputnota', 'histproduksi', 'historybelanja', 'resep', 'panduan']
+    : bisaPenjualan
+      // Kasir (yang bisa tutup kasir): Kas Keluar tetap di menu bawah
+      ? ['home', 'closing', 'produksi', 'pengeluaran', 'penjualan', 'request', 'stoklist', 'waste', 'inputnota', 'histproduksi', 'historybelanja', 'resep', 'panduan']
+      // Staff dapur/bar: Stok di menu bawah, Kas Keluar pindah ke "Lainnya"
+      : ['home', 'closing', 'produksi', 'stoklist', 'request', 'waste', 'inputnota', 'pengeluaran', 'histproduksi', 'historybelanja', 'resep', 'panduan']
   const primary = allMenus.slice(0, 4)               // 4 ikon di menu bawah + "Lainnya"
   const more = allMenus.slice(4)
   const go = (id) => { setView(id); setMoreOpen(false); window.scrollTo({ top: 0 }) }
