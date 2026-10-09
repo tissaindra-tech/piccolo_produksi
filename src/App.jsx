@@ -681,17 +681,17 @@ function AppShell(props) {
   const MENU = {
     home: ['Home', 'home'], produksi: ['Produksi', 'pot'], histproduksi: ['Lap. Produksi', 'clipboard'],
     inputnota: ['Nota', 'receipt'], penjualan: ['Tutup Kasir', 'wallet'], pengeluaran: ['Kas Keluar', 'cash'],
-    closing: ['Update Stok', 'clipboard'], stoklist: ['Stok', 'box'], waste: ['Waste', 'trash'],
+    closing: ['Update Stok', 'clipboard'], stoklist: ['Daftar Stok', 'box'], waste: ['Waste', 'trash'],
     historybelanja: ['Riwayat Belanja', 'cart'], resep: ['Resep', 'book'], dashboard: ['Dashboard', 'chart'],
     rekap: ['Rekap Harian', 'calendar'], upload: ['Master', 'upload'], auditlog: ['Audit', 'list'], kelolauser: ['User', 'users'],
     request: ['Request', 'bag'], panduan: ['Panduan', 'book'], barangmasuk: ['Barang Masuk', 'cart'],
   }
   const allMenus = role === 'owner'
     ? ['home', 'penjualan', 'inputnota', 'rekap', 'request', 'dashboard', 'stoklist', 'histproduksi', 'historybelanja', 'barangmasuk', 'pengeluaran', 'resep', 'upload', 'auditlog', 'kelolauser', 'panduan']
-    // Staff: Home · Stok · Produksi · Request di menu bawah; sisanya di "Lainnya".
+    // Staff: Home · Update Stok · Produksi · Request di menu bawah; sisanya (termasuk Daftar Stok) di "Lainnya".
     // Update Stok juga bisa dibuka dari tombol di Home. Riwayat belanja tidak dipakai staff.
     // Kas Keluar hanya untuk staff yang ditunjuk jadi kasir (bisa tutup kasir). Riwayat belanja staff tanpa harga.
-    : ['home', 'stoklist', 'produksi', 'request', 'closing', 'barangmasuk', ...(bisaPenjualan ? ['penjualan', 'pengeluaran'] : []), 'inputnota', 'waste', 'resep', 'panduan']
+    : ['home', 'closing', 'produksi', 'request', 'stoklist', 'barangmasuk', ...(bisaPenjualan ? ['penjualan', 'pengeluaran'] : []), 'inputnota', 'waste', 'resep', 'panduan']
   const primary = allMenus.slice(0, 4)               // 4 ikon di menu bawah + "Lainnya"
   const more = allMenus.slice(4)
   const go = (id) => { setView(id); setMoreOpen(false); window.scrollTo({ top: 0 }) }
