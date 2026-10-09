@@ -2067,23 +2067,42 @@ function InputNotaView({ bahanBaku, showToast, loadData, logAudit, setView, user
   const [totalNota, setTotalNota] = useState('')      // total di nota (mode foto, opsional)
   const [isiBarang, setIsiBarang] = useState(false)  // mode foto: staff memilih mengisi barang sendiri
   const driveUrl = settings?.drive?.url || ''
-  const [requestId, setRequestId] = useState(null)   // request belanja yang sedang dibelanjakan
+  const [requestIds, setRequestIds] = useState([])   // request belanja yang dibelanjakan lewat nota ini (boleh lebih dari satu)
   const [fotoExtra, setFotoExtra] = useState([])     // foto nota lembar ke-2 dst: [{ file, b64, text }]
   const [biayaLain, setBiayaLain] = useState([])     // baris di nota yang bukan bahan stok: [{ keterangan, kategori, harga }]
   const totalBiayaLain = biayaLain.reduce((s, x) => s + (Number(x.harga) || 0), 0)
   const reqSiap = requests.filter(r => r.status === 'disetujui')
-  const pakaiRequest = (r) => {
-    if (requestId === r.id) { setRequestId(null); return }
-    setRequestId(r.id)
+  const ringkasRequest = (r) => {
+    const its = r.items || []
+    return its.length === 1 ? `${its[0].nama} ${its[0].jumlah || ''} ${its[0].satuan || ''}`.trim() : `${its.length} barang`
+  }
+  // Tap pil request: dikaitkan ke nota ini. Barangnya DITAMBAHKAN ke daftar yang sudah diketik (tidak mengganti).
+  // Barang yang sudah ada di daftar tidak ditambah dua kali. Tap lagi untuk melepas kaitan (baris barang tetap, hapus manual kalau perlu).
+  const kaitkanRequests = (list) => {
+    if (!list.length) return
+    setRequestIds([...requestIds, ...list.map(r => r.id)])
+    const label = list.length === 1 ? `request ${list[0].dibuat_oleh}` : `${list.length} request`
     if (mode === 'manual' || isiBarang) {
-      setItems((r.items || []).map(i => {
+      const terisi = items.filter(it => it.bahan_id || it.jumlah || it.harga)   // buang baris kosong bawaan form
+      const sudahAda = new Set(terisi.map(it => String(it.bahan_id)))
+      const baru = []
+      list.forEach(r => (r.items || []).forEach(i => {
+        if (sudahAda.has(String(i.bahan_id))) return
+        sudahAda.add(String(i.bahan_id))
         const b = bahanBaku.find(x => String(x.id) === String(i.bahan_id))
         let exp = ''
         if (b?.is_perishable && b?.umur_simpan_hari) { const d = new Date(); d.setDate(d.getDate() + b.umur_simpan_hari); exp = d.toISOString().split('T')[0] }
-        return { bahan_id: b ? b.id : '', jumlah: String(i.jumlah || ''), satuan: i.satuan || b?.satuan_dasar || '', harga: '', tanggal_expired: exp }
+        baru.push({ bahan_id: b ? b.id : '', jumlah: String(i.jumlah || ''), satuan: i.satuan || b?.satuan_dasar || '', harga: '', tanggal_expired: exp })
       }))
+      setItems([...terisi, ...baru])
+      showToast(baru.length ? `+${baru.length} barang dari ${label}` : `${label} dikaitkan, barangnya sudah ada di daftar`)
+    } else {
+      showToast(`Nota ini untuk ${label}`)
     }
-    showToast(`Nota ini untuk request ${r.dibuat_oleh}`)
+  }
+  const pakaiRequest = (r) => {
+    if (requestIds.includes(r.id)) { setRequestIds(requestIds.filter(id => id !== r.id)); showToast(`Request ${r.dibuat_oleh} dilepas dari nota ini`); return }
+    kaitkanRequests([r])
   }
 
   // Terapkan hasil pembacaan (dari Claude atau OCR Drive) ke form
@@ -2286,8 +2305,8 @@ function InputNotaView({ bahanBaku, showToast, loadData, logAudit, setView, user
         })
       }
 
-      if (requestId) {
-        await supabase.from('request_belanja').update({ status: 'dibeli', belanja_id: newId }).eq('id', requestId)
+      if (requestIds.length) {
+        await supabase.from('request_belanja').update({ status: 'dibeli', belanja_id: newId }).in('id', requestIds)
       }
       showToast(fotoSaja ? '✅ Foto nota tersimpan. Barang & stok diisi Claude pada tugas pagi.' : '✅ Nota tersimpan, stok auto-update')
       loadData()
@@ -2420,18 +2439,21 @@ function InputNotaView({ bahanBaku, showToast, loadData, logAudit, setView, user
 
       {reqSiap.length > 0 && (
         <div style={{ background: C.panel, border: `1px solid ${C.border}`, borderRadius: '12px', padding: '10px 12px', marginBottom: '12px' }}>
-          <div style={{ fontSize: '12px', fontWeight: 600, marginBottom: '6px' }}>🛒 Belanja ini untuk request yang mana?</div>
+          <div style={{ fontSize: '12px', fontWeight: 600, marginBottom: '6px' }}>🛒 Belanja ini untuk request yang mana?{requestIds.length ? ` (${requestIds.length} dipilih)` : ''}</div>
           <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
             {reqSiap.map(r => (
               <button key={r.id} onClick={() => pakaiRequest(r)} style={{
                 ...S.btn, padding: '6px 10px', fontSize: '11px', borderRadius: '99px', textAlign: 'left',
-                background: requestId === r.id ? C.sun : C.panel2, color: C.text, border: `1px solid ${requestId === r.id ? C.sun : C.border}`,
+                background: requestIds.includes(r.id) ? C.sun : C.panel2, color: C.text, border: `1px solid ${requestIds.includes(r.id) ? C.sun : C.border}`,
               }}>
-                {requestId === r.id ? '✓ ' : ''}{r.dibuat_oleh} · {(r.items || []).length} barang · {formatTanggalID(r.tanggal)}
+                {requestIds.includes(r.id) ? '✓ ' : ''}{r.dibuat_oleh} · {ringkasRequest(r)} · {formatTanggalID(r.tanggal)}
               </button>
             ))}
           </div>
-          <div style={{ fontSize: '10.5px', color: C.text3, marginTop: '6px' }}>Opsional. Kalau dipilih, request ditandai "sudah dibeli" dan (mode ketik manual) daftar barangnya terisi.</div>
+          <div style={{ fontSize: '10.5px', color: C.text3, marginTop: '6px' }}>Opsional, boleh pilih lebih dari satu. Yang dipilih ditandai "sudah dibeli" saat nota disimpan. Di mode ketik manual, barangnya ditambahkan ke daftar tanpa menghapus yang sudah diketik.</div>
+          {reqSiap.length > 1 && requestIds.length < reqSiap.length && (
+            <button onClick={() => kaitkanRequests(reqSiap.filter(r => !requestIds.includes(r.id)))} style={{ ...S.btn, marginTop: '6px', padding: '5px 10px', fontSize: '11px', background: 'transparent', color: C.text2, border: `1px dashed ${C.border}` }}>Pilih semua {reqSiap.length} request</button>
+          )}
         </div>
       )}
 
