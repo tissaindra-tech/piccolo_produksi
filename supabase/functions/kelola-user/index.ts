@@ -71,7 +71,7 @@ Deno.serve(async (req: Request) => {
         divisi: String(u.divisi || "Kitchen"), avatar: String(u.avatar || "👤"),
         is_active: aktif, urutan: u.urutan ?? null,
         bisa_penjualan: u.role === "owner" ? true : !!u.bisa_penjualan,
-        auth_uid: authUid, login_email: email, pin: null,
+        auth_uid: authUid, login_email: email, pin: "",   // kolom pin lama NOT NULL; PIN hidup sebagai kata sandi akun, bukan di tabel
       };
       const { error: e3 } = await admin.from("app_users").upsert(row);
       if (e3) throw e3;
