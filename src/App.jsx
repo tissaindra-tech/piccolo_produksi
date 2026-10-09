@@ -2957,13 +2957,24 @@ function ClosingView({ bahanBaku, closing, showToast, loadData, logAudit, userNa
           onClick={() => setWastePrompt(null)}>
           <div style={{ background: C.panel, borderRadius: '16px 16px 0 0', padding: '20px', width: '100%', maxWidth: '520px' }} onClick={e => e.stopPropagation()}>
             <div style={{ fontSize: '15px', fontWeight: 600, marginBottom: '2px' }}>{wastePrompt.b.nama}</div>
-            <div style={{ fontSize: '12px', color: C.text3, marginBottom: '12px' }}>
-              Stok turun dari {wastePrompt.sebelum} ke {wastePrompt.aktual} {wastePrompt.b.satuan_dasar}. Ada yang dibuang atau rusak?
+            <div style={{ fontSize: '12px', color: C.text3, marginBottom: '10px' }}>
+              Stok di aplikasi {wastePrompt.sebelum}, kamu hitung sisa <strong style={{ color: C.text }}>{wastePrompt.aktual} {wastePrompt.b.satuan_dasar}</strong>.
+              Berarti <strong style={{ color: C.red }}>{wastePrompt.sebelum - wastePrompt.aktual} {wastePrompt.b.satuan_dasar} berkurang</strong>.
+            </div>
+            <div style={{ background: C.yellowBg, border: `1px solid ${C.yellowBorder}`, borderRadius: '8px', padding: '8px 10px', fontSize: '11.5px', color: C.yellow, marginBottom: '10px' }}>
+              Dari yang berkurang itu, berapa yang <strong>dibuang / rusak</strong>? Bukan sisa stoknya. Kalau berkurang karena terpakai masak, pilih "Tidak ada".
             </div>
             <div style={{ background: C.panel2, borderRadius: '10px', padding: '12px', marginBottom: '10px' }}>
-              <label style={S.label}>Kalau ada, berapa {wastePrompt.b.satuan_dasar} yang dibuang?</label>
+              <label style={S.label}>Jumlah yang dibuang ({wastePrompt.b.satuan_dasar}), maksimal {wastePrompt.sebelum - wastePrompt.aktual}</label>
               <input type="number" inputMode="decimal" value={wasteQty} onChange={e => setWasteQty(e.target.value)} placeholder="0"
-                style={{ ...S.input, fontSize: '18px', textAlign: 'center', marginBottom: '8px' }} />
+                max={wastePrompt.sebelum - wastePrompt.aktual}
+                style={{ ...S.input, fontSize: '18px', textAlign: 'center', marginBottom: '6px', borderColor: Number(wasteQty) > wastePrompt.sebelum - wastePrompt.aktual ? C.red : undefined }} />
+              {Number(wasteQty) > wastePrompt.sebelum - wastePrompt.aktual && (
+                <div style={{ fontSize: '11px', color: C.red, marginBottom: '6px' }}>❌ Lebih besar dari yang berkurang ({wastePrompt.sebelum - wastePrompt.aktual}). Yang diisi adalah jumlah yang dibuang, bukan sisa stok.</div>
+              )}
+              <button onClick={() => setWasteQty(String(wastePrompt.sebelum - wastePrompt.aktual))} style={{ ...S.btn, padding: '5px 10px', fontSize: '11px', marginBottom: '8px', background: 'transparent', color: C.text2, border: `1px dashed ${C.border}` }}>
+                Semua yang berkurang dibuang ({wastePrompt.sebelum - wastePrompt.aktual} {wastePrompt.b.satuan_dasar})
+              </button>
               <div style={{ display: 'flex', gap: '5px', flexWrap: 'wrap' }}>
                 {ALASAN_WASTE.map(a => (
                   <button key={a} onClick={() => setWasteAlasan(a)} style={{
@@ -2976,8 +2987,8 @@ function ClosingView({ bahanBaku, closing, showToast, loadData, logAudit, userNa
             <div style={{ display: 'flex', gap: '8px' }}>
               <button onClick={() => { const p = wastePrompt; setWastePrompt(null); handleSave(p.b, null) }}
                 style={{ ...S.btn, ...S.btnSecondary, flex: 1, padding: '12px' }}>Tidak ada, simpan</button>
-              <button disabled={!(Number(wasteQty) > 0)} onClick={() => { const p = wastePrompt; setWastePrompt(null); handleSave(p.b, { jumlah: Number(wasteQty), alasan: wasteAlasan }) }}
-                style={{ ...S.btn, ...S.btnDanger, flex: 1, padding: '12px', opacity: Number(wasteQty) > 0 ? 1 : 0.5 }}>🗑️ Catat waste & simpan</button>
+              <button disabled={!(Number(wasteQty) > 0) || Number(wasteQty) > wastePrompt.sebelum - wastePrompt.aktual} onClick={() => { const p = wastePrompt; setWastePrompt(null); handleSave(p.b, { jumlah: Number(wasteQty), alasan: wasteAlasan }) }}
+                style={{ ...S.btn, ...S.btnDanger, flex: 1, padding: '12px', opacity: Number(wasteQty) > 0 && Number(wasteQty) <= wastePrompt.sebelum - wastePrompt.aktual ? 1 : 0.5 }}>🗑️ Catat waste & simpan</button>
             </div>
           </div>
         </div>
@@ -3586,7 +3597,27 @@ function HapusBahanModal({ item, onClose, showToast, loadData, logAudit }) {
 // =====================================================
 // WASTE VIEW
 // =====================================================
-function WasteView({ bahanBaku, waste, showToast, loadData, logAudit, setView, userName, setUserName }) {
+function WasteView({ bahanBaku, waste, showToast, loadData, logAudit, setView, userName, setUserName, role }) {
+  // Hapus catatan waste yang salah (owner). Kalau waste dicatat lewat form Waste, stoknya dulu dikurangi → dikembalikan.
+  // Kalau dicatat saat update stok, stok sudah = hasil hitung, jadi stok tidak diubah; hanya angka waste di closing dinolkan.
+  const [hapusWasteId, setHapusWasteId] = useState(null)
+  const hapusWaste = async (w) => {
+    const b = bahanBaku.find(x => x.id === w.bahan_id)
+    try {
+      const dariUpdateStok = w.catatan === 'Dicatat saat update stok'
+      const { error } = await supabase.from('waste').delete().eq('id', w.id)
+      if (error) throw error
+      if (dariUpdateStok) {
+        await supabase.from('closing_stok').update({ qty_wasted_busuk: 0 }).eq('bahan_id', w.bahan_id).eq('tanggal', w.tanggal)
+      } else if (b) {
+        await supabase.from('bahan_baku').update({ stok_saat_ini: (Number(b.stok_saat_ini) || 0) + Number(w.jumlah || 0) }).eq('id', b.id)
+      }
+      if (logAudit) await logAudit('waste', w.id, 'delete', w.bahan_id, b?.nama || '', { jumlah: w.jumlah, alasan: w.alasan, stok_dikembalikan: !dariUpdateStok, oleh: userName })
+      showToast(dariUpdateStok ? '🗑️ Catatan waste dihapus' : `🗑️ Waste dihapus, stok ${b?.nama || ''} dikembalikan`)
+      setHapusWasteId(null)
+      loadData && loadData()
+    } catch (e) { showToast('❌ ' + e.message) }
+  }
   const [tab, setTab] = useState('catat')
   const [bahanId, setBahanId] = useState('')
   const [jumlah, setJumlah] = useState('')
@@ -3806,6 +3837,17 @@ function WasteView({ bahanBaku, waste, showToast, loadData, logAudit, setView, u
                       <div style={{ fontSize: '11px', color: C.text3, marginTop: '4px', fontStyle: 'italic' }}>
                         "{w.catatan}"
                       </div>
+                    )}
+                    {role === 'owner' && (
+                      hapusWasteId === w.id ? (
+                        <div style={{ display: 'flex', gap: '6px', marginTop: '8px', alignItems: 'center' }}>
+                          <span style={{ fontSize: '11px', color: C.red }}>Hapus catatan ini?</span>
+                          <button onClick={() => hapusWaste(w)} style={{ ...S.btn, ...S.btnDanger, padding: '5px 10px', fontSize: '11px' }}>Ya, hapus</button>
+                          <button onClick={() => setHapusWasteId(null)} style={{ ...S.btn, ...S.btnSecondary, padding: '5px 10px', fontSize: '11px' }}>Batal</button>
+                        </div>
+                      ) : (
+                        <button onClick={() => setHapusWasteId(w.id)} style={{ ...S.btn, marginTop: '8px', padding: '4px 10px', fontSize: '11px', background: 'transparent', color: C.text3, border: `1px dashed ${C.border}` }}>🗑️ Salah input? Hapus</button>
+                      )
                     )}
                   </div>
                   {/* Foto thumbnail */}
