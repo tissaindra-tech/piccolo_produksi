@@ -13,12 +13,7 @@ import { PenjualanView } from './TutupKasir'
 // PICCOLO CORNER v3 - Aplikasi Produksi & Inventory
 // =====================================================
 
-// ─── FALLBACK login — dipakai HANYA kalau database gagal diakses ───
-// Daftar user asli dikelola Owner via menu "👥 User" (tabel app_users)
-const FALLBACK_USERS = [
-  { id: 'tissa',   nama: 'Tissa',   role: 'owner', divisi: 'All', pin: '0000', avatar: '👑'    },
-  { id: 'diandra', nama: 'Diandra', role: 'owner', divisi: 'All', pin: '0000', avatar: '👩‍💼' },
-]
+// Daftar user dikelola Owner via menu "👥 User" (tabel app_users). Login lewat akun Supabase tersembunyi: PIN = kata sandi.
 const THRESHOLD_KECIL = 100000
 const CLOSING_LOCK_DAYS = 4
 const NOTA_EDIT_LOCK_DAYS = 30  // nota tidak bisa diedit setelah 30 hari
@@ -49,36 +44,41 @@ function Login({ onLogin }) {
   const [selectedUser, setSelectedUser] = useState(null)
   const [pin, setPin] = useState('')
   const [error, setError] = useState('')
+  const [masuk, setMasuk] = useState(false)
+  const [gagalMuat, setGagalMuat] = useState('')
 
-  // Ambil daftar user dari database (dikelola Owner via menu "User")
-  useEffect(() => {
-    let alive = true
-    ;(async () => {
-      try {
-        const { data, error } = await supabase
-          .from('app_users').select('*')
-          .eq('is_active', true)
-          .order('urutan', { ascending: true })
-          .order('nama', { ascending: true })
-        if (!alive) return
-        if (error || !data || data.length === 0) setUsers(FALLBACK_USERS)
-        else setUsers(data)
-      } catch {
-        if (alive) setUsers(FALLBACK_USERS)
-      }
-    })()
-    return () => { alive = false }
-  }, [])
-
-  const handlePinSubmit = (e) => {
-    e?.preventDefault()
-    if (!selectedUser) return
-    if (pin === selectedUser.pin) {
-      onLogin(selectedUser)
-    } else {
-      setError('PIN salah. Coba lagi.')
-      setPin('')
+  // Daftar nama untuk layar login (view tanpa rahasia, boleh dibaca sebelum login)
+  const muatUsers = async () => {
+    setGagalMuat('')
+    try {
+      const { data, error } = await supabase
+        .from('app_users_login').select('*')
+        .order('urutan', { ascending: true })
+        .order('nama', { ascending: true })
+      if (error) throw error
+      setUsers(data || [])
+    } catch (e) {
+      setUsers([]); setGagalMuat('Tidak bisa mengambil daftar user. Cek koneksi internet, lalu coba lagi.')
     }
+  }
+  useEffect(() => { muatUsers() }, [])
+
+  // PIN dicek oleh Supabase Auth: PIN = kata sandi akun tersembunyi user itu.
+  // Database hanya melayani permintaan yang membawa sesi login ini.
+  const handlePinSubmit = async (e) => {
+    e?.preventDefault()
+    if (!selectedUser || masuk) return
+    if (!/^\d{6}$/.test(pin)) { setError('PIN 6 angka'); return }
+    if (!selectedUser.login_email) { setError('Akun login belum dibuat. Hubungi Tissa.'); return }
+    setMasuk(true)
+    const { error } = await supabase.auth.signInWithPassword({ email: selectedUser.login_email, password: pin })
+    setMasuk(false)
+    if (error) {
+      setError(/invalid/i.test(error.message) ? 'PIN salah. Coba lagi.' : /banned/i.test(error.message) ? 'Akun dinonaktifkan. Hubungi Tissa.' : 'Gagal masuk: ' + error.message)
+      setPin('')
+      return
+    }
+    onLogin(selectedUser)
   }
 
   // Layar 0: loading
@@ -103,6 +103,11 @@ function Login({ onLogin }) {
             <h1 style={{ fontSize: '18px', fontWeight: 600, color: C.text, margin: '8px 0 4px' }}>Piccolo Corner</h1>
             <p style={{ fontSize: '12px', color: C.text3 }}>Pilih namamu untuk masuk</p>
           </div>
+          {gagalMuat && (
+            <div style={{ background: C.redBg, color: C.red, border: `1px solid ${C.redBorder}`, borderRadius: '8px', padding: '8px 10px', fontSize: '12px', marginBottom: '10px' }}>
+              {gagalMuat} <button onClick={muatUsers} style={{ ...S.btn, ...S.btnSecondary, padding: '4px 8px', fontSize: '11px', marginLeft: '6px' }}>Coba lagi</button>
+            </div>
+          )}
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' }}>
             {users.map(u => (
               <button key={u.id} onClick={() => { setSelectedUser(u); setError(''); setPin('') }}
@@ -142,12 +147,12 @@ function Login({ onLogin }) {
           <input
             type="password" value={pin}
             onChange={e => { setPin(e.target.value); setError('') }}
-            placeholder="PIN"
-            style={{ ...S.input, padding: '14px 16px', fontSize: '22px', textAlign: 'center', letterSpacing: '10px', marginBottom: '12px' }}
-            autoFocus inputMode="numeric" maxLength={4}
+            placeholder="PIN 6 angka"
+            style={{ ...S.input, padding: '14px 16px', fontSize: '22px', textAlign: 'center', letterSpacing: '8px', marginBottom: '12px' }}
+            autoFocus inputMode="numeric" maxLength={6} autoComplete="current-password"
           />
           {error && <div style={{ color: C.red, fontSize: '13px', textAlign: 'center', marginBottom: '12px' }}>{error}</div>}
-          <button type="submit" style={{ ...S.btn, ...S.btnPrimary, width: '100%', padding: '14px' }}>Masuk</button>
+          <button type="submit" disabled={masuk} style={{ ...S.btn, ...S.btnPrimary, width: '100%', padding: '14px', opacity: masuk ? 0.6 : 1 }}>{masuk ? 'Memeriksa PIN...' : 'Masuk'}</button>
         </form>
         <div style={{ marginTop: '16px', fontSize: '11px', color: C.text3, textAlign: 'center' }}>
           Hubungi Tissa jika lupa PIN
@@ -180,28 +185,35 @@ function KelolaUserView({ showToast, logAudit }) {
   useEffect(() => { load() }, [])
 
   const openAdd = () => setForm({ id: null, nama: '', role: 'staff', divisi: 'Kitchen', pin: '', avatar: '🧑‍🍳', is_active: true, bisa_penjualan: false })
-  const openEdit = (u) => setForm({ ...u })
+  const openEdit = (u) => setForm({ ...u, pin: '' })
+
+  // Simpan lewat Edge Function "kelola-user": hanya owner yang login yang diterima, dan PIN langsung
+  // jadi kata sandi akun tersembunyi user itu (tidak pernah disimpan di tabel).
+  const panggil = async (body) => {
+    const { data, error } = await supabase.functions.invoke('kelola-user', { body })
+    if (error) throw new Error(error.message || 'Gagal menghubungi server')
+    if (!data?.ok) throw new Error(data?.error || 'Gagal')
+    return data
+  }
 
   const save = async () => {
     if (!form.nama || !form.nama.trim()) return showToast('Nama wajib diisi')
-    if (!/^\d{4}$/.test(form.pin || '')) return showToast('PIN harus 4 angka')
+    const isNew = !form.id
+    const pinBaru = (form.pin || '').trim()
+    if (isNew && !/^\d{6}$/.test(pinBaru)) return showToast('User baru wajib diberi PIN 6 angka')
+    if (!isNew && pinBaru && !/^\d{6}$/.test(pinBaru)) return showToast('PIN harus 6 angka (kosongkan kalau tidak diganti)')
     setSaving(true)
     try {
-      const isNew = !form.id
-      const randomSuffix = Math.random().toString(36).slice(2, 7)
-      const id = form.id || ((form.nama.toLowerCase().replace(/[^a-z0-9]/g, '') || 'user') + '_' + randomSuffix)
-      const row = {
-        id, nama: form.nama.trim(), role: form.role || 'staff',
-        divisi: form.divisi || 'Kitchen', pin: form.pin,
-        avatar: form.avatar || '👤', is_active: form.is_active !== false,
+      const user = {
+        id: form.id || null, nama: form.nama.trim(), role: form.role || 'staff',
+        divisi: form.divisi || 'Kitchen', avatar: form.avatar || '👤', is_active: form.is_active !== false,
         urutan: form.urutan != null ? form.urutan : (users.length + 1),
         bisa_penjualan: form.role === 'owner' ? true : !!form.bisa_penjualan,
       }
-      const { error } = await supabase.from('app_users').upsert(row)
-      if (error) throw new Error(error.message)
-      if (logAudit) await logAudit('app_users', id, isNew ? 'tambah user' : 'edit user', null, row.nama, row.role + ' · ' + row.divisi)
+      const hasil = await panggil({ aksi: 'simpan', user, pin: pinBaru || null })
+      if (logAudit) await logAudit('app_users', hasil.id, isNew ? 'tambah user' : 'edit user', null, user.nama, user.role + ' · ' + user.divisi + (hasil.pin_diganti ? ' · PIN diganti' : ''))
       setForm(null)
-      showToast(isNew ? 'User ditambah ✓' : 'User diperbarui ✓')
+      showToast(isNew ? 'User ditambah ✓' : hasil.pin_diganti ? 'User diperbarui, PIN baru berlaku ✓' : 'User diperbarui ✓')
       load()
     } catch (e) {
       showToast('❌ Gagal simpan: ' + e.message)
@@ -212,11 +224,12 @@ function KelolaUserView({ showToast, logAudit }) {
 
   const del = async (u) => {
     if (!window.confirm('Hapus user "' + u.nama + '"?\n\nDia tidak akan bisa login lagi.')) return
-    const { error } = await supabase.from('app_users').delete().eq('id', u.id)
-    if (error) return showToast('Gagal hapus: ' + error.message)
-    if (logAudit) await logAudit('app_users', u.id, 'hapus user', null, u.nama, u.role + ' · ' + u.divisi)
-    showToast('User dihapus ✓')
-    load()
+    try {
+      await panggil({ aksi: 'hapus', user: { id: u.id } })
+      if (logAudit) await logAudit('app_users', u.id, 'hapus user', null, u.nama, u.role + ' · ' + u.divisi)
+      showToast('User dihapus ✓')
+      load()
+    } catch (e) { showToast('❌ Gagal hapus: ' + e.message) }
   }
 
   return (
@@ -224,7 +237,7 @@ function KelolaUserView({ showToast, logAudit }) {
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '14px' }}>
         <div>
           <h2 style={{ fontSize: '17px', fontWeight: 700, color: C.text }}>👥 Kelola User</h2>
-          <p style={{ fontSize: '11px', color: C.text3, marginTop: '2px' }}>Atur staff & PIN. Perubahan berlaku saat login berikutnya.</p>
+          <p style={{ fontSize: '11px', color: C.text3, marginTop: '2px' }}>Atur staff & PIN (6 angka). PIN tidak ditampilkan; ganti lewat ✏️ Edit kalau lupa.</p>
         </div>
         <button onClick={openAdd} style={{ ...S.btn, ...S.btnPrimary, fontSize: '12px', whiteSpace: 'nowrap' }}>+ Tambah</button>
       </div>
@@ -247,7 +260,7 @@ function KelolaUserView({ showToast, logAudit }) {
                 )}
               </div>
               <div style={{ fontSize: '11px', color: C.text3, marginTop: '3px' }}>
-                {u.divisi} · PIN <span style={{ fontFamily: 'monospace', letterSpacing: '2px', background: C.panel2, padding: '1px 6px', borderRadius: '5px', color: C.text2 }}>{u.pin}</span>
+                {u.divisi} · {u.auth_uid ? (u.is_active === false ? '⛔ nonaktif' : '🔐 akun login aktif') : '⚠️ belum punya akun login, edit & isi PIN'}
               </div>
             </div>
             <div style={{ display: 'flex', gap: '6px' }}>
@@ -307,10 +320,19 @@ function KelolaUserView({ showToast, logAudit }) {
             )}
 
             <div style={{ marginBottom: '13px' }}>
-              <label style={S.label}>PIN (4 angka)</label>
-              <input style={S.input} value={form.pin} inputMode="numeric" maxLength={4}
-                onChange={e => setForm({ ...form, pin: e.target.value.replace(/\D/g, '').slice(0, 4) })} placeholder="cth: 3456" />
+              <label style={S.label}>{form.id ? 'PIN baru (6 angka, kosongkan kalau tidak diganti)' : 'PIN (6 angka)'}</label>
+              <input style={S.input} value={form.pin || ''} inputMode="numeric" maxLength={6}
+                onChange={e => setForm({ ...form, pin: e.target.value.replace(/\D/g, '').slice(0, 6) })} placeholder={form.id ? 'biarkan kosong' : 'cth: 345678'} />
             </div>
+            {form.id && (
+              <div style={{ marginBottom: '13px' }}>
+                <button onClick={() => setForm({ ...form, is_active: form.is_active === false })}
+                  style={{ width: '100%', textAlign: 'left', padding: '10px 12px', borderRadius: '8px', fontSize: '12px', fontWeight: 600, cursor: 'pointer',
+                    border: `1.5px solid ${form.is_active === false ? C.redBorder : C.border}`, background: form.is_active === false ? C.redBg : C.bg, color: form.is_active === false ? C.red : C.text2 }}>
+                  {form.is_active === false ? '⛔ Akun dinonaktifkan (tidak bisa login)' : '✅ Akun aktif'}
+                </button>
+              </div>
+            )}
 
             <div style={{ marginBottom: '16px' }}>
               <label style={S.label}>Avatar</label>
@@ -356,8 +378,28 @@ export default function App() {
   const [loading, setLoading] = useState(false)  // false dulu — true hanya setelah login
   const [toast, setToast] = useState('')
   const [lazyLoaded, setLazyLoaded] = useState({})
+  const [cekSesi, setCekSesi] = useState(true)   // saat buka aplikasi: apakah HP ini masih punya sesi login?
 
   const showToast = (msg) => { setToast(msg); setTimeout(() => setToast(''), 2400) }
+
+  useEffect(() => {
+    (async () => {
+      try {
+        const { data: { session } } = await supabase.auth.getSession()
+        if (session?.user) {
+          const { data } = await supabase.from('app_users_login').select('*').eq('auth_uid', session.user.id).maybeSingle()
+          if (data) { setCurrentUser(data); setRole(data.role); setUserName(data.nama) }
+          else await supabase.auth.signOut()
+        }
+      } catch (e) { console.error('cek sesi:', e) }
+      setCekSesi(false)
+    })()
+    // Kalau sesi dicabut (PIN diganti owner / akun dinonaktifkan), kembali ke layar login
+    const { data: sub } = supabase.auth.onAuthStateChange((event) => {
+      if (event === 'SIGNED_OUT') { setRole(null); setCurrentUser(null); setUserName(''); setView('home'); setLazyLoaded({}); sudahMuat.current = false }
+    })
+    return () => sub?.subscription?.unsubscribe()
+  }, [])
 
   // Layar loading penuh hanya saat data pertama kali dimuat setelah login.
   // Refresh berikutnya (setelah approve, simpan, atau perubahan dari HP lain) jalan diam-diam di belakang,
@@ -490,6 +532,7 @@ export default function App() {
 
   const isLocked = daysSinceClosing >= CLOSING_LOCK_DAYS && role !== 'owner'
 
+  if (cekSesi) return <LoadingScreen />
   if (!role) return <Login onLogin={(u) => { setCurrentUser(u); setRole(u.role); setUserName(u.nama) }} />
 
   // Hak input laporan penjualan: owner selalu; staff hanya jika diberi hak oleh owner di menu User
@@ -505,7 +548,7 @@ export default function App() {
     },
     loadData, showToast, logAudit, lazyLoaded,
     daysSinceClosing, isLocked,
-    handleLogout: () => { setRole(null); setCurrentUser(null); setUserName(''); setView('home'); setLazyLoaded({}); sudahMuat.current = false }
+    handleLogout: async () => { try { await supabase.auth.signOut() } catch {} setRole(null); setCurrentUser(null); setUserName(''); setView('home'); setLazyLoaded({}); sudahMuat.current = false }
   }
 
   return (
