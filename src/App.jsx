@@ -2218,6 +2218,7 @@ function InputNotaView({ bahanBaku, showToast, loadData, logAudit, setView, user
     const biayaValid = biayaLain.filter(x => x.keterangan.trim() && Number(x.harga) > 0)
     const fotoSaja = mode === 'foto' && validItems.length === 0 && biayaValid.length === 0
     if (!fotoSaja && validItems.length === 0 && biayaValid.length === 0) { showToast('❌ Minimal 1 barang atau 1 biaya'); return }
+    if (fotoSaja && !(Number(totalNota) > 0)) { showToast('❌ Isi "Total di nota" dulu, supaya nota ini ikut terhitung di Rekap Harian'); return }
     const totalEfektif = fotoSaja ? (Number(totalNota) || 0) : totalHarga
     if (jalur === 'kecil' && totalEfektif >= THRESHOLD_KECIL) {
       showToast(`❌ Belanja ≥ Rp ${THRESHOLD_KECIL.toLocaleString('id-ID')} pakai jalur Normal`); return
@@ -2466,7 +2467,7 @@ function InputNotaView({ bahanBaku, showToast, loadData, logAudit, setView, user
 
       {mode === 'foto' && !aiResult && !isiBarang && (
         <div style={{ background: C.panel, border: `1px solid ${C.border}`, borderRadius: '12px', padding: '12px 14px', marginBottom: '12px' }}>
-          <FormRow label="Total di nota (Rp) — opsional, isi kalau terbaca">
+          <FormRow label="Total di nota (Rp) — wajib, lihat angka total di nota / bukti bayar">
             <input type="number" inputMode="numeric" value={totalNota} onChange={e => setTotalNota(e.target.value)} placeholder="misal 1046800" style={S.input} />
           </FormRow>
           <button onClick={() => setIsiBarang(true)} style={{ ...S.btn, background: 'transparent', border: `1px dashed ${C.border}`, color: C.text2, width: '100%', fontSize: '12px' }}>
@@ -3841,10 +3842,11 @@ function HistoryBelanjaView({ belanja, showToast, loadData }) {
   const updateEditItem = (idx, field, val) => setEditItems(prev => prev.map((item, i) => i === idx ? { ...item, [field]: val } : item))
   const removeEditItem = (idx) => setEditItems(prev => prev.filter((_, i) => i !== idx))
   const addEditItem = () => setEditItems(prev => [...prev, { nama: '', jumlah: '', satuan: '', harga: '' }])
-  const totalEdit = editItems.reduce((s, i) => s + (Number(i.harga) || 0), 0)
+  const totalBiayaLainEdit = (selected?.biaya_lain || []).reduce((s, x) => s + (Number(x.harga) || 0), 0)
+  const totalEdit = editItems.reduce((s, i) => s + (Number(i.harga) || 0), 0) + totalBiayaLainEdit
 
   const saveEdit = async () => {
-    if (editItems.length === 0) { showToast('❌ Minimal 1 item'); return }
+    if (editItems.length === 0 && !totalBiayaLainEdit) { showToast('❌ Minimal 1 item'); return }
     if (editItems.find(i => !i.nama || !i.harga)) { showToast('❌ Lengkapi nama dan harga semua item'); return }
     setSaving(true)
     try {
@@ -4544,10 +4546,11 @@ function BelanjaTabOwner({ belanja, showToast, loadData }) {
   const updateEditItem = (idx, field, val) => setEditItems(prev => prev.map((item, i) => i === idx ? { ...item, [field]: val } : item))
   const removeEditItem = (idx) => setEditItems(prev => prev.filter((_, i) => i !== idx))
   const addEditItem = () => setEditItems(prev => [...prev, { nama: '', jumlah: '', satuan: '', harga: '' }])
-  const totalEdit = editItems.reduce((s, i) => s + (Number(i.harga) || 0), 0)
+  const totalBiayaLainEdit = (selected?.biaya_lain || []).reduce((s, x) => s + (Number(x.harga) || 0), 0)
+  const totalEdit = editItems.reduce((s, i) => s + (Number(i.harga) || 0), 0) + totalBiayaLainEdit
 
   const saveEdit = async () => {
-    if (editItems.length === 0) { showToast('❌ Minimal 1 item'); return }
+    if (editItems.length === 0 && !totalBiayaLainEdit) { showToast('❌ Minimal 1 item'); return }
     if (editItems.find(i => !i.nama || !i.harga)) { showToast('❌ Lengkapi nama dan harga semua item'); return }
     setSaving(true)
     try {
