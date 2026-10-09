@@ -4,6 +4,7 @@ import * as XLSX from 'xlsx'
 import { C, S, Icon, uploadFotoToStorage, compressImage, salinKeDrive, setDriveContext, KATEGORI_BIAYA, SUMBER_DANA_LABEL, sumberText, KATEGORI_LABEL, dibuatSendiri } from './shared'
 import { kirimKeDrive } from './nota'
 import { RequestBelanjaView } from './Request'
+import { PanduanView } from './Panduan'
 import { semuaFoto } from './Kasir'
 import { PengeluaranKasirView, RekapHarianView, TalanganCard } from './Kasir'
 import { PenjualanView } from './TutupKasir'
@@ -640,11 +641,11 @@ function AppShell(props) {
     closing: ['Update Stok', 'clipboard'], stoklist: ['Stok', 'box'], waste: ['Waste', 'trash'],
     historybelanja: ['Belanja', 'cart'], resep: ['Resep', 'book'], dashboard: ['Dashboard', 'chart'],
     rekap: ['Rekap Harian', 'calendar'], upload: ['Master', 'upload'], auditlog: ['Audit', 'list'], kelolauser: ['User', 'users'],
-    request: ['Request', 'bag'],
+    request: ['Request', 'bag'], panduan: ['Panduan', 'book'],
   }
   const allMenus = role === 'owner'
-    ? ['home', 'penjualan', 'inputnota', 'rekap', 'request', 'dashboard', 'stoklist', 'histproduksi', 'historybelanja', 'pengeluaran', 'resep', 'upload', 'auditlog', 'kelolauser']
-    : ['home', 'closing', 'produksi', 'pengeluaran', 'request', ...(bisaPenjualan ? ['penjualan'] : []), 'stoklist', 'waste', 'inputnota', 'histproduksi', 'historybelanja', 'resep']
+    ? ['home', 'penjualan', 'inputnota', 'rekap', 'request', 'dashboard', 'stoklist', 'histproduksi', 'historybelanja', 'pengeluaran', 'resep', 'upload', 'auditlog', 'kelolauser', 'panduan']
+    : ['home', 'closing', 'produksi', 'pengeluaran', 'request', ...(bisaPenjualan ? ['penjualan'] : []), 'stoklist', 'waste', 'inputnota', 'histproduksi', 'historybelanja', 'resep', 'panduan']
   const primary = allMenus.slice(0, 4)               // 4 ikon di menu bawah + "Lainnya"
   const more = allMenus.slice(4)
   const go = (id) => { setView(id); setMoreOpen(false); window.scrollTo({ top: 0 }) }
@@ -696,6 +697,7 @@ function AppShell(props) {
         {view === 'histproduksi' && <HistoryProduksiView {...props} />}
         {view === 'inputnota' && <InputNotaView {...props} />}
         {view === 'request' && <RequestBelanjaView {...props} />}
+        {view === 'panduan' && <PanduanView {...props} />}
         {view === 'penjualan' && <PenjualanView {...props} />}
         {view === 'pengeluaran' && <PengeluaranKasirView {...props} />}
         {view === 'rekap' && <RekapHarianView {...props} />}
