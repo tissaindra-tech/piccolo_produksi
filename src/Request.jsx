@@ -43,7 +43,9 @@ export function RequestBelanjaView({ bahanBaku = [], requests = [], setRequests,
 
   const tambah = (b) => {
     if (rows.some(r => r.bahan_id === b.id)) return
-    const sat = b.kemasan || ({ gram: 'kg', gr: 'kg', g: 'kg', ml: 'liter' })[String(b.satuan_dasar || '').toLowerCase()] || b.satuan_dasar || ''
+    // Satuan ikut satuan barang di master (gram / ml / pcs ...), bukan kolom kemasan:
+    // di master banyak bahan kemasannya terisi "Pack" sembarangan, jadi staff bingung dan takut mengubahnya.
+    const sat = b.satuan_dasar || ''
     setRows([...rows, { bahan_id: b.id, nama: b.nama, jumlah: '', satuan: sat }])
     setCari('')
   }

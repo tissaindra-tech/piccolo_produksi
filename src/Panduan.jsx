@@ -16,9 +16,9 @@ const KARTU = {
     {
       judul: 'Stok hampir habis, minta dibelikan', kapan: 'Saat lihat bahan menipis atau muncul tanda "⚠ rendah" di Stok.', view: 'request', tombol: 'Buka Request',
       langkah: [
-        'Buka Lainnya → Request, tap "Buat".',
+        'Buka Request di menu bawah, tap "Buat".',
         'Tap barang dari daftar "Stok rendah", atau ketik namanya di kolom cari.',
-        'Isi jumlah dan satuan yang diminta (boleh "2 Pack"; saat nota nanti tetap diisi gram/ml).',
+        'Isi jumlah. Satuan sudah terisi sesuai satuan barang (gram / ml / pcs); boleh diganti kalau perlu, misal "2 kg".',
         'Tulis catatan kalau perlu (untuk event, beli di mana), lalu "Kirim request".',
         'Tunggu owner. Kalau sudah "Disetujui · siap dibeli", baru belanja.',
       ],
