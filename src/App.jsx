@@ -373,6 +373,7 @@ export default function App() {
   const [penjualan, setPenjualan] = useState([])
   const [requests, setRequests] = useState([])
   const [requestDraft, setRequestDraft] = useState(null)   // bahan yang mau langsung di-request dari layar stok
+  const [bukaNotaId, setBukaNotaId] = useState(null)       // nota yang mau langsung dibuka di Riwayat Belanja (dari Rekap Harian)
   const [lastClosingTanggal, setLastClosingTanggal] = useState(null)
   const [settings, setSettings] = useState({})
   const [loading, setLoading] = useState(false)  // false dulu — true hanya setelah login
@@ -541,6 +542,9 @@ export default function App() {
   const props = {
     role, userName, setUserName, view, setView, currentUser, bisaPenjualan, opname, saveSetting, settings,
     bahanBaku, produksi, belanja, closing, waste, auditLog, penjualan, requests, setRequests, requestDraft, setRequestDraft,
+    bukaNotaId, setBukaNotaId,
+    // Dari Rekap Harian: tap ✏️ di nota → buka nota itu di Riwayat Belanja (di sana ada Edit & Hapus)
+    bukaNota: (id) => { setBukaNotaId(id); setView('historybelanja'); window.scrollTo({ top: 0 }) },
     // Stok rendah: bahan beli → form Request; produksi/prepack → menu Produksi (dibuat sendiri di dapur/bar)
     mintaBeli: (b) => {
       if (dibuatSendiri(b)) { showToast(`👨‍🍳 ${b.nama} dibuat sendiri, bukan dibeli. Catat di Produksi.`); setView('produksi'); window.scrollTo({ top: 0 }); return }
@@ -4046,7 +4050,7 @@ function WasteView({ bahanBaku, waste, showToast, loadData, logAudit, setView, u
 // =====================================================
 // HISTORY BELANJA
 // =====================================================
-function HistoryBelanjaView({ belanja, showToast, loadData, role }) {
+function HistoryBelanjaView({ belanja, showToast, loadData, role, bukaNotaId, setBukaNotaId }) {
   // Staff: hanya barang apa yang sudah dibeli, kapan, oleh siapa. Harga, total, sumber dana, foto nota = urusan owner.
   const terbatas = role !== 'owner'
   const [filter, setFilter] = useState('month')
@@ -4059,10 +4063,21 @@ function HistoryBelanjaView({ belanja, showToast, loadData, role }) {
   const [editJumlah2, setEditJumlah2] = useState('')
   const [editCatatan, setEditCatatan] = useState('')
   const [editItems, setEditItems] = useState([])
+  const [editDibayarOleh, setEditDibayarOleh] = useState('')   // kalau sumber dana = talangan: siapa yang bayar dulu
   const [saving, setSaving] = useState(false)
   const [confirmHapus, setConfirmHapus] = useState(false)
   const [deleting, setDeleting] = useState(false)
   const now = new Date()
+
+  // Dibuka dari Rekap Harian: langsung tampilkan nota yang diminta (ambil dari server kalau belum ada di daftar)
+  useEffect(() => {
+    if (!bukaNotaId) return
+    const ada = belanja.find(b => String(b.id) === String(bukaNotaId))
+    const tampil = (n) => { setSelected(n); setEditing(false); setConfirmHapus(false); setBukaNotaId?.(null) }
+    if (ada) { tampil(ada); return }
+    supabase.from('belanja').select('*').eq('id', bukaNotaId).maybeSingle()
+      .then(({ data }) => { if (data) tampil(data); else { showToast('❌ Nota tidak ditemukan'); setBukaNotaId?.(null) } })
+  }, [bukaNotaId])  // eslint-disable-line react-hooks/exhaustive-deps
 
   const deleteNota = async () => {
     setDeleting(true)
@@ -4091,6 +4106,7 @@ function HistoryBelanjaView({ belanja, showToast, loadData, role }) {
     setEditSumber(nota.sumber_dana || 'kas_kasir')
     setEditSumber2(nota.sumber_dana_2 || ''); setEditJumlah2(nota.jumlah_sumber_2 ? String(nota.jumlah_sumber_2) : '')
     setEditCatatan(nota.catatan || '')
+    setEditDibayarOleh(nota.dibayar_oleh || '')
     setEditItems((nota.items || []).map(i => ({ ...i })))
     setEditing(true)
   }
@@ -4108,7 +4124,15 @@ function HistoryBelanjaView({ belanja, showToast, loadData, role }) {
       const cleanItems = editItems.map(i => ({ nama: i.nama.trim(), jumlah: Number(i.jumlah)||0, satuan: i.satuan||'', harga: Number(i.harga)||0 }))
       const j2 = editSumber2 ? Number(editJumlah2) || 0 : 0
       if (editSumber2 && (j2 <= 0 || j2 >= totalEdit)) { showToast('❌ Bagian sumber dana kedua harus di antara 0 dan total nota'); setSaving(false); return }
+      if (editSumber === 'talangan' && !editDibayarOleh.trim()) { showToast('❌ Isi siapa yang menalangi'); setSaving(false); return }
       const patchSumber = { sumber_dana_2: editSumber2 || null, jumlah_sumber_2: j2 }
+      // Pindah ke/dari talangan: ikut rapikan kolom talangan supaya rekap hutang & pembukuan benar
+      if (editSumber === 'talangan') {
+        patchSumber.dibayar_oleh = editDibayarOleh.trim()
+        if (selected.sumber_dana !== 'talangan') { patchSumber.status_ganti = 'belum'; patchSumber.jumlah_diganti = 0; patchSumber.sumber_ganti = null; patchSumber.tanggal_ganti = null }
+      } else if (selected.sumber_dana === 'talangan') {
+        patchSumber.dibayar_oleh = null; patchSumber.status_ganti = null; patchSumber.jumlah_diganti = 0; patchSumber.sumber_ganti = null; patchSumber.tanggal_ganti = null
+      }
       await supabase.from('belanja').update({ jalur: editJalur, sumber_dana: editSumber, catatan: editCatatan, items: cleanItems, total_harga: totalEdit, ...patchSumber }).eq('id', selected.id)
       showToast('✅ Nota berhasil diupdate')
       await loadData()
@@ -4165,15 +4189,18 @@ function HistoryBelanjaView({ belanja, showToast, loadData, role }) {
                 <option value="darurat">🔴 Darurat</option>
               </select>
               <label style={S.label}>Sumber dana</label>
-              <select value={editSumber} onChange={e => setEditSumber(e.target.value)} style={{ ...S.input, marginBottom: '10px' }}>
-                <option value="kas_kasir">🏦 Kas kasir</option>
-                <option value="transfer_toko">🏦 Transfer rekening toko</option>
+              <select value={editSumber} onChange={e => setEditSumber(e.target.value)} style={{ ...S.input, marginBottom: editSumber === 'talangan' ? '6px' : '10px' }}>
+                <option value="kas_kasir">🏪 Kas kasir</option>
+                <option value="petty_cash">💵 Petty cash</option>
+                <option value="transfer_toko">🏦 Transfer rekening toko (BCA)</option>
                 <option value="qris_toko">📱 QRIS toko</option>
-                <option value="talangan">🙋 Ditalangi dulu</option>
-                <option value="kas_bon">📋 Bon / hutang dulu</option>
-                <option value="transfer">💳 Transfer</option>
-                <option value="pribadi">👤 Dana pribadi</option>
+                <option value="talangan">🙋 Ditalangi dulu (Tissa / Diandra / staff)</option>
+                {!['kas_kasir', 'petty_cash', 'transfer_toko', 'qris_toko', 'talangan'].includes(editSumber) && <option value={editSumber}>{SUMBER_DANA_LABEL[editSumber] || editSumber}</option>}
               </select>
+              {editSumber === 'talangan' && (
+                <input value={editDibayarOleh} onChange={e => setEditDibayarOleh(e.target.value)} placeholder="Siapa yang bayar dulu? misal: Tissa, Diandra, Hans"
+                  style={{ ...S.input, marginBottom: '10px', background: C.yellowBg, borderColor: C.yellowBorder }} />
+              )}
               <label style={S.label}>Sumber dana kedua (kalau nota dibayar dari 2 sumber)</label>
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '6px', marginBottom: '10px' }}>
                 <select value={editSumber2} onChange={e => setEditSumber2(e.target.value)} style={S.input}>

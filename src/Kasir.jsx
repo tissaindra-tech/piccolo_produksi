@@ -346,7 +346,7 @@ export function PengeluaranKasirView({ showToast, userName, setUserName, loadDat
 // =====================================================
 // 3. REKAP HARIAN (Owner) — satu hari, semua kejadian, siap untuk Accurate
 // =====================================================
-export function RekapHarianView({ bahanBaku, showToast, setView }) {
+export function RekapHarianView({ bahanBaku, showToast, setView, role, bukaNota }) {
   const [tanggal, setTanggal] = useState(formatTanggal())
   const [data, setData] = useState({ penjualan: null, belanja: [], pengeluaran: [], waste: [], produksi: [] })
   const [loading, setLoading] = useState(false)
@@ -547,6 +547,10 @@ export function RekapHarianView({ bahanBaku, showToast, setView }) {
               <span style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
                 <strong style={{ color: num(b.total_harga) ? C.text : C.red }}>{formatRupiah(b.total_harga)}</strong>
                 {semuaFoto(b.foto_nota, b.foto_tambahan).map((u, i, arr) => <button key={u} onClick={() => setFotoModal(u)} style={{ ...S.btn, ...S.btnSecondary, padding: '2px 8px', fontSize: '10px' }}>📷{arr.length > 1 ? i + 1 : ''}</button>)}
+                {role === 'owner' && bukaNota && (
+                  <button onClick={() => bukaNota(b.id)} title="Edit nota (salah sumber dana, jumlah, dll.)"
+                    style={{ ...S.btn, padding: '2px 8px', fontSize: '10px', background: C.yellowBg, color: C.yellow, border: `1px solid ${C.yellowBorder}` }}>✏️</button>
+                )}
               </span>
             </div>
             {(b.items || []).map((it, i) => {
