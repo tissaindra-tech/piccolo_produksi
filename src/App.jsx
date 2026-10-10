@@ -3435,6 +3435,7 @@ function BahanFormModal({ mode, initial, onClose, showToast, loadData, logAudit,
 // STOK LIST VIEW (with Tambah/Edit Bahan)
 // =====================================================
 function StokListView({ bahanBaku, showToast, loadData, logAudit, userName, role, mintaBeli }) {
+  const isOwner = role === 'owner'
   const [filterFrek, setFilterFrek] = useState('all')
   const toggleFrek = async (b) => {
     const next = b.frekuensi_hitung === 'harian' ? 'mingguan' : 'harian'
@@ -3531,12 +3532,17 @@ function StokListView({ bahanBaku, showToast, loadData, logAudit, userName, role
     <div>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '4px' }}>
         <h2 style={{ fontSize: '17px', fontWeight: 600 }}>📦 Daftar Stok</h2>
-        <button onClick={() => setModal({ mode: 'add', initial: null })}
-          style={{ background: C.text, color: C.panel, border: 'none', borderRadius: '7px', padding: '7px 12px', fontSize: '12px', fontWeight: 600, cursor: 'pointer' }}>
-          ➕ Tambah Bahan
-        </button>
+        {/* Tambah & hapus bahan hanya owner (aturan di database: hanya_owner_tambah / hanya_owner_hapus) */}
+        {isOwner && (
+          <button onClick={() => setModal({ mode: 'add', initial: null })}
+            style={{ background: C.text, color: C.panel, border: 'none', borderRadius: '7px', padding: '7px 12px', fontSize: '12px', fontWeight: 600, cursor: 'pointer' }}>
+            ➕ Tambah Bahan
+          </button>
+        )}
       </div>
-      <p style={{ fontSize: '12px', color: C.text3, marginBottom: '12px' }}>Tap bahan → update stok atau edit data</p>
+      <p style={{ fontSize: '12px', color: C.text3, marginBottom: '12px' }}>
+        {isOwner ? 'Tap bahan → update stok atau edit data' : 'Tap bahan → update stok atau edit data. Bahan baru minta ditambahkan owner lewat WA atau Request.'}
+      </p>
 
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '6px', marginBottom: '12px' }}>
         {[
@@ -3672,10 +3678,12 @@ function StokListView({ bahanBaku, showToast, loadData, logAudit, userName, role
                 flex: 1, padding: '6px', fontSize: '11px', borderRadius: '6px',
                 background: 'transparent', color: C.text3, border: `1px solid ${C.border}`, cursor: 'pointer',
               }}>✏️ Edit</button>
-              <button onClick={() => setModal({ mode: 'hapus', initial: b })} style={{
-                padding: '6px 8px', fontSize: '11px', borderRadius: '6px',
-                background: C.redBg, color: C.red, border: `1px solid ${C.redBorder}`, cursor: 'pointer',
-              }}>🗑️</button>
+              {isOwner && (
+                <button onClick={() => setModal({ mode: 'hapus', initial: b })} style={{
+                  padding: '6px 8px', fontSize: '11px', borderRadius: '6px',
+                  background: C.redBg, color: C.red, border: `1px solid ${C.redBorder}`, cursor: 'pointer',
+                }}>🗑️</button>
+              )}
             </div>
           </div>
         )
