@@ -85,7 +85,7 @@ function Login({ onLogin }) {
   // Layar 0: loading
   if (users === null) {
     return (
-      <div style={{ minHeight: '100vh', background: C.bg, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '20px' }}>
+      <div className="layar-penuh" style={{ background: C.bg, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '20px' }}>
         <div style={{ textAlign: 'center' }}>
           <img src="/icons/logo-hitam.png" alt="Piccolo Corner" style={{ width: '150px', height: 'auto', margin: '0 auto 6px', display: 'block' }} />
           <div style={{ fontSize: '13px', color: C.text3, marginTop: '8px' }}>Memuat...</div>
@@ -97,7 +97,7 @@ function Login({ onLogin }) {
   // Layar 1: pilih nama
   if (!selectedUser) {
     return (
-      <div style={{ minHeight: '100vh', background: C.bg, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '20px' }}>
+      <div className="layar-penuh" style={{ background: C.bg, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '20px' }}>
         <div style={{ background: C.panel, borderRadius: '16px', padding: '28px 20px', maxWidth: '380px', width: '100%', boxShadow: '0 4px 20px rgba(0,0,0,0.08)' }}>
           <div style={{ textAlign: 'center', marginBottom: '20px' }}>
             <img src="/icons/logo-hitam.png" alt="Piccolo Corner" style={{ width: '150px', height: 'auto', margin: '0 auto 10px', display: 'block' }} />
@@ -130,7 +130,7 @@ function Login({ onLogin }) {
 
   // Layar 2: input PIN
   return (
-    <div style={{ minHeight: '100vh', background: C.bg, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '20px' }}>
+    <div className="layar-penuh" style={{ background: C.bg, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '20px' }}>
       <div style={{ background: C.panel, borderRadius: '16px', padding: '32px 24px', maxWidth: '380px', width: '100%', boxShadow: '0 4px 20px rgba(0,0,0,0.08)' }}>
         <button onClick={() => { setSelectedUser(null); setPin(''); setError('') }}
           style={{ ...S.btn, ...S.btnSecondary, fontSize: '12px', marginBottom: '20px', padding: '6px 12px' }}>
@@ -556,8 +556,7 @@ export default function App() {
   }
 
   return (
-    <div style={{
-      minHeight: '100vh',
+    <div className="layar-penuh" style={{
       background: '#E8DCC8',
       fontFamily: "'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif",
       color: C.text2,
@@ -565,10 +564,9 @@ export default function App() {
       justifyContent: 'center',
       alignItems: 'flex-start',
     }}>
-      <div style={{
+      <div className="layar-penuh" style={{
         width: '100%',
         maxWidth: '520px',
-        minHeight: '100vh',
         background: C.bg,
         boxShadow: '0 0 60px rgba(43,29,18,0.18)',
         position: 'relative',
@@ -713,7 +711,7 @@ function AppShell(props) {
   )
 
   return (
-    <div style={{ width: '100%', minHeight: '100vh' }}>
+    <div style={{ width: '100%' }}>
       {/* Header kuning sunset */}
       <div style={{ padding: '14px 20px', background: C.sun, color: C.text, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
@@ -740,8 +738,8 @@ function AppShell(props) {
         </div>
       )}
 
-      {/* Isi halaman; ruang bawah untuk menu */}
-      <div style={{ padding: '18px 18px 104px' }}>
+      {/* Isi halaman; ruang bawah = tinggi menu bawah (70px + safe-area) + sedikit jeda, supaya tidak ada area kosong di atas menu */}
+      <div style={{ padding: '18px 18px calc(78px + env(safe-area-inset-bottom, 0px))' }}>
         {view === 'home' && <HomeView {...props} />}
         {view === 'produksi' && <ProduksiView {...props} />}
         {view === 'histproduksi' && <HistoryProduksiView {...props} />}
