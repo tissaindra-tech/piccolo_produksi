@@ -348,7 +348,7 @@ export function PengeluaranKasirView({ showToast, userName, setUserName, loadDat
 // =====================================================
 export function RekapHarianView({ bahanBaku, showToast, setView, role, bukaNota }) {
   const [tanggal, setTanggal] = useState(formatTanggal())
-  const [data, setData] = useState({ penjualan: null, belanja: [], pengeluaran: [], waste: [], produksi: [] })
+  const [data, setData] = useState({ penjualan: null, kasAwalPrev: null, belanja: [], pengeluaran: [], waste: [], produksi: [] })
   const [loading, setLoading] = useState(false)
   const [fotoModal, setFotoModal] = useState(null)
 
@@ -357,20 +357,22 @@ export function RekapHarianView({ bahanBaku, showToast, setView, role, bukaNota 
   const load = async (tgl) => {
     setLoading(true)
     try {
-      const [pj, bl, pk, ws, pr] = await Promise.all([
+      const [pj, prev, bl, pk, ws, pr] = await Promise.all([
         supabase.from('penjualan_harian').select('*').eq('tanggal', tgl).maybeSingle(),
+        // kas akhir laporan terakhir sebelum tanggal ini → jadi kas awal kalau laporan hari ini belum punya kas_awal (sama seperti form Tutup Kasir)
+        supabase.from('penjualan_harian').select('tanggal, kas_akhir').lt('tanggal', tgl).not('kas_akhir', 'is', null).order('tanggal', { ascending: false }).limit(1),
         supabase.from('belanja').select('*').eq('tanggal', tgl).order('created_at'),
         supabase.from('pengeluaran_kasir').select('*').eq('tanggal', tgl).order('created_at'),
         supabase.from('waste').select('*').eq('tanggal', tgl).order('created_at'),
         supabase.from('produksi').select('id, menu_nama, hasil_pcs, total_cogs, yang_masak, status').eq('tanggal', tgl).order('created_at'),
       ])
-      setData({ penjualan: pj.data || null, belanja: bl.data || [], pengeluaran: (pk.data || []).filter(p => !p.dipindah_ke_belanja), waste: ws.data || [], produksi: pr.data || [] })
+      setData({ penjualan: pj.data || null, kasAwalPrev: prev.data?.[0] || null, belanja: bl.data || [], pengeluaran: (pk.data || []).filter(p => !p.dipindah_ke_belanja), waste: ws.data || [], produksi: pr.data || [] })
     } catch (e) { showToast('❌ ' + e.message) }
     setLoading(false)
   }
   useEffect(() => { load(tanggal) }, [tanggal])
 
-  const { penjualan, belanja, pengeluaran, waste, produksi } = data
+  const { penjualan, kasAwalPrev, belanja, pengeluaran, waste, produksi } = data
   // Total belanja = semua nota hari itu, bahan stok maupun bukan stok (kunci, tisu, parkir) digabung.
   // Rinciannya tetap dipisah per baris di daftar, teks rekap, dan Excel supaya Accurate bisa membedakan.
   const biayaNota = (b) => (b.biaya_lain || []).reduce((s, x) => s + num(x.harga), 0)
@@ -382,7 +384,11 @@ export function RekapHarianView({ bahanBaku, showToast, setView, role, bukaNota 
   const nilaiWaste = waste.reduce((s, w) => s + num(w.jumlah) * num(bahanById[w.bahan_id]?.harga_per_satuan), 0)
   const belanjaKas = belanja.reduce((s, b) => s + bagianSumber(b, 'kas_kasir'), 0)   // hanya bagian yang keluar dari laci kasir
   const pengeluaranKas = pengeluaran.filter(p => p.sumber_dana === 'kas_kasir').reduce((s, p) => s + num(p.jumlah), 0)
-  const kasTunaiBersih = num(penjualan?.tunai) - belanjaKas - pengeluaranKas
+  // Kas awal = kas_awal laporan hari itu; kalau kosong pakai kas akhir laporan terakhir sebelumnya (logika sama dengan form Tutup Kasir)
+  const kasAwal = penjualan?.kas_awal != null ? num(penjualan.kas_awal) : num(kasAwalPrev?.kas_akhir)
+  const kasAwalAsal = penjualan?.kas_awal != null ? 'kas awal laporan ini' : kasAwalPrev ? `kas akhir ${formatTanggalID(kasAwalPrev.tanggal)}` : 'belum ada laporan sebelumnya'
+  // Sisa cash hari ini = uang yang seharusnya ada di laci: kas kasir kemarin + penjualan tunai − belanja & kas keluar dari kas kasir
+  const kasTunaiBersih = kasAwal + num(penjualan?.tunai) - belanjaKas - pengeluaranKas
 
   // Baris belanja per item, dengan kode Accurate
   const belanjaRows = []
@@ -448,7 +454,8 @@ export function RekapHarianView({ bahanBaku, showToast, setView, role, bukaNota 
       { Keterangan: 'Belanja dari kas kasir', Nilai: belanjaKas },
       { Keterangan: 'Pengeluaran kasir (total)', Nilai: totalPengeluaran },
       { Keterangan: 'Pengeluaran kasir dari kas kasir', Nilai: pengeluaranKas },
-      { Keterangan: 'Sisa cash hari ini (tunai − belanja kas − pengeluaran kas)', Nilai: kasTunaiBersih },
+      { Keterangan: `Kas awal kasir (${kasAwalAsal})`, Nilai: kasAwal },
+      { Keterangan: 'Sisa cash hari ini (kas awal + tunai − belanja kas − pengeluaran kas)', Nilai: kasTunaiBersih },
       { Keterangan: 'Nilai waste (perkiraan)', Nilai: Math.round(nilaiWaste) },
       { Keterangan: 'Produksi (batch)', Nilai: produksi.length },
     ]
@@ -502,7 +509,7 @@ export function RekapHarianView({ bahanBaku, showToast, setView, role, bukaNota 
         <Tile label="Omzet" value={penjualan ? formatRupiah(penjualan.total_omzet) : 'belum diinput'} color={penjualan ? 'green' : 'yellow'} sub={penjualan?.jumlah_transaksi ? `${penjualan.jumlah_transaksi} transaksi` : ''} />
         <Tile label="Total belanja" value={formatRupiah(totalBelanja)} color="blue" sub={`${belanja.length} nota${notaMenunggu ? ` · ⏳ ${notaMenunggu} belum dibaca` : ''}`} />
         <Tile label="Pengeluaran kasir" value={formatRupiah(totalPengeluaran)} color="red" sub={`${pengeluaran.length} catatan`} />
-        <Tile label="Sisa cash hari ini" value={formatRupiah(kasTunaiBersih)} color={kasTunaiBersih >= 0 ? 'greenLight' : 'red'} sub="tunai − keluar dari kas kasir" />
+        <Tile label="Sisa cash hari ini" value={formatRupiah(kasTunaiBersih)} color={kasTunaiBersih >= 0 ? 'greenLight' : 'red'} sub={`kas awal ${formatRupiah(kasAwal)} + tunai − keluar dari kas kasir`} />
       </div>
 
       <div style={{ display: 'flex', gap: '6px', marginBottom: '12px' }}>
