@@ -158,3 +158,15 @@ export const sumberText = (r) => {
   const l2 = SUMBER_DANA_LABEL[r.sumber_dana_2] || r.sumber_dana_2
   return `${l1} ${rp(total - j2)}${talangan} + ${l2} ${rp(j2)}`
 }
+
+// Kolom Rupiah: titik ribuan muncul otomatis, dan titik/koma yang diketik tidak dibaca sebagai desimal.
+// Ketik 137.459 atau 137459 → tersimpan 137459.
+export function RpInput({ value, onChange, placeholder, style, disabled }) {
+  const n = value === '' || value === null || value === undefined ? '' : Math.round(Number(value))
+  const shown = n === '' || isNaN(n) ? '' : n.toLocaleString('id-ID')
+  return (
+    <input type="text" inputMode="numeric" value={shown} disabled={disabled}
+      onChange={e => onChange(e.target.value.replace(/[^\d]/g, ''))}
+      placeholder={placeholder} style={style} />
+  )
+}

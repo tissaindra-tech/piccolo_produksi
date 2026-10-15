@@ -1,7 +1,7 @@
 import { useState, useEffect, useMemo, useRef } from 'react'
 import { supabase, generateId, formatTanggal, formatTanggalID, formatRupiah, daysFromNow } from './supabase'
 import * as XLSX from 'xlsx'
-import { C, S, Icon, uploadFotoToStorage, compressImage, salinKeDrive, setDriveContext, KATEGORI_BIAYA, SUMBER_DANA_LABEL, sumberText, KATEGORI_LABEL, dibuatSendiri } from './shared'
+import { C, S, Icon, RpInput, uploadFotoToStorage, compressImage, salinKeDrive, setDriveContext, KATEGORI_BIAYA, SUMBER_DANA_LABEL, sumberText, KATEGORI_LABEL, dibuatSendiri } from './shared'
 import { kirimKeDrive } from './nota'
 import { RequestBelanjaView } from './Request'
 import { PanduanView } from './Panduan'
@@ -2596,7 +2596,7 @@ function InputNotaView({ bahanBaku, showToast, loadData, logAudit, setView, user
           <div style={{ background: C.yellowBg, border: `1px solid ${C.yellowBorder}`, borderRadius: '8px', padding: '8px 10px', marginTop: '6px' }}>
             <div style={{ fontSize: '11px', color: C.yellow, marginBottom: '6px' }}>Dicatat sebagai hutang toko ke orang itu sampai diganti. Kalau sebagian sudah diganti (misal Tissa transfer 700.000 duluan), isi di sini:</div>
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '6px' }}>
-              <input type="number" inputMode="numeric" value={digantiSebagian} onChange={e => setDigantiSebagian(e.target.value)} placeholder="Sudah diganti Rp (boleh kosong)" style={{ ...S.input, padding: '8px', fontSize: '12px' }} />
+              <RpInput value={digantiSebagian} onChange={setDigantiSebagian} placeholder="Sudah diganti Rp (boleh kosong)" style={{ ...S.input, padding: '8px', fontSize: '12px' }} />
               <select value={sumberGanti} onChange={e => setSumberGanti(e.target.value)} style={{ ...S.input, padding: '8px', fontSize: '12px' }}>
                 <option value="transfer_owner">dari BCA Tissa (pribadi)</option>
                 <option value="shopeepay_tissa">dari ShopeePay Tissa</option>
@@ -2618,7 +2618,7 @@ function InputNotaView({ bahanBaku, showToast, loadData, logAudit, setView, user
               <select value={sumberDana2} onChange={e => setSumberDana2(e.target.value)} style={{ ...S.input, padding: '8px', fontSize: '12px' }}>
                 {Object.entries(SUMBER_DANA_LABEL).filter(([k]) => k !== 'talangan' && k !== sumberDana).map(([k, l]) => <option key={k} value={k}>{l}</option>)}
               </select>
-              <input type="number" inputMode="numeric" value={jumlahSumber2} onChange={e => setJumlahSumber2(e.target.value)} placeholder="Rp dari sumber ini" style={{ ...S.input, padding: '8px', fontSize: '12px' }} />
+              <RpInput value={jumlahSumber2} onChange={setJumlahSumber2} placeholder="Rp dari sumber ini" style={{ ...S.input, padding: '8px', fontSize: '12px' }} />
               <button onClick={() => { setPakaiSumber2(false); setJumlahSumber2('') }} style={{ ...S.btn, ...S.btnDanger, padding: '8px 10px' }}>✕</button>
             </div>
           </div>
@@ -2664,7 +2664,7 @@ function InputNotaView({ bahanBaku, showToast, loadData, logAudit, setView, user
       {mode === 'foto' && !aiResult && !items.some(i => i.bahan_id && i.jumlah && i.harga) && (
         <div style={{ background: C.panel, border: `1px solid ${C.border}`, borderRadius: '12px', padding: '12px 14px', marginBottom: '12px' }}>
           <FormRow label="Total di nota (Rp) — wajib, lihat angka total di nota / bukti bayar">
-            <input type="number" inputMode="numeric" value={totalNota} onChange={e => setTotalNota(e.target.value)} placeholder="misal 1046800" style={S.input} />
+            <RpInput value={totalNota} onChange={setTotalNota} placeholder="misal 1.046.800" style={S.input} />
           </FormRow>
           {fotoExtra.length > 0 && <div style={{ fontSize: '10.5px', color: C.text3, marginTop: '-4px', marginBottom: '8px' }}>Ada {fotoExtra.length + 1} foto di nota ini: isi jumlah total semua lembarnya.</div>}
           {!isiBarang && (
@@ -2714,8 +2714,8 @@ function InputNotaView({ bahanBaku, showToast, loadData, logAudit, setView, user
                 title="Satuan dasar master (sama dengan Accurate). Isi jumlah dalam satuan ini."
                 style={{ ...S.input, background: C.panel, color: C.text3 }}
               />
-              <input type="number" placeholder="Harga (Rp)" value={item.harga}
-                onChange={e => updateItem(idx, 'harga', e.target.value)} style={S.input} />
+              <RpInput placeholder="Harga (Rp)" value={item.harga}
+                onChange={v => updateItem(idx, 'harga', v)} style={S.input} />
             </div>
             {ba && !item.diNota && !samaSatuan(ba.satuan_dasar, ba.kemasan) && ba.kemasan && (
               <div style={{ fontSize: '10.5px', color: C.text3, marginBottom: '4px' }}>
@@ -2749,7 +2749,7 @@ function InputNotaView({ bahanBaku, showToast, loadData, logAudit, setView, user
             <select value={x.kategori} onChange={e => setBiayaLain(biayaLain.map((y, i) => i === idx ? { ...y, kategori: e.target.value } : y))} style={{ ...S.input, padding: '8px', fontSize: '12px' }}>
               {KATEGORI_BIAYA.map(k => <option key={k} value={k}>{k}</option>)}
             </select>
-            <input type="number" inputMode="numeric" value={x.harga} onChange={e => setBiayaLain(biayaLain.map((y, i) => i === idx ? { ...y, harga: e.target.value } : y))} placeholder="Rp" style={{ ...S.input, padding: '8px' }} />
+            <RpInput value={x.harga} onChange={v => setBiayaLain(biayaLain.map((y, i) => i === idx ? { ...y, harga: v } : y))} placeholder="Rp" style={{ ...S.input, padding: '8px' }} />
             <button onClick={() => setBiayaLain(biayaLain.filter((_, i) => i !== idx))} style={{ ...S.btn, ...S.btnDanger, padding: '8px 10px' }}>✕</button>
           </div>
         ))}
@@ -4207,7 +4207,7 @@ function HistoryBelanjaView({ belanja, showToast, loadData, role, bukaNotaId, se
                   <option value="">— tidak ada —</option>
                   {Object.entries(SUMBER_DANA_LABEL).filter(([k]) => k !== 'talangan' && k !== editSumber).map(([k, l]) => <option key={k} value={k}>{l}</option>)}
                 </select>
-                <input type="number" inputMode="numeric" value={editJumlah2} onChange={e => setEditJumlah2(e.target.value)} placeholder="Rp dari sumber kedua" disabled={!editSumber2} style={{ ...S.input, opacity: editSumber2 ? 1 : 0.5 }} />
+                <RpInput value={editJumlah2} onChange={setEditJumlah2} placeholder="Rp dari sumber kedua" disabled={!editSumber2} style={{ ...S.input, opacity: editSumber2 ? 1 : 0.5 }} />
               </div>
               <label style={S.label}>Catatan</label>
               <textarea rows={2} value={editCatatan} onChange={e => setEditCatatan(e.target.value)} style={{ ...S.input, marginBottom: '4px' }} placeholder="Catatan tambahan..." />
@@ -4225,7 +4225,7 @@ function HistoryBelanjaView({ belanja, showToast, loadData, role, bukaNotaId, se
                   <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '6px' }}>
                     <div><div style={{ fontSize: '10px', color: C.text3, marginBottom: '3px' }}>Jumlah</div><input type="number" value={item.jumlah} onChange={e => updateEditItem(idx, 'jumlah', e.target.value)} placeholder="0" style={S.input} /></div>
                     <div><div style={{ fontSize: '10px', color: C.text3, marginBottom: '3px' }}>Satuan</div><input type="text" value={item.satuan} onChange={e => updateEditItem(idx, 'satuan', e.target.value)} placeholder="kg/gram..." style={S.input} /></div>
-                    <div><div style={{ fontSize: '10px', color: C.text3, marginBottom: '3px' }}>Harga (Rp)</div><input type="number" value={item.harga} onChange={e => updateEditItem(idx, 'harga', e.target.value)} placeholder="0" style={S.input} /></div>
+                    <div><div style={{ fontSize: '10px', color: C.text3, marginBottom: '3px' }}>Harga (Rp)</div><RpInput value={item.harga} onChange={v => updateEditItem(idx, 'harga', v)} placeholder="0" style={S.input} /></div>
                   </div>
                 </div>
               ))}
@@ -4926,7 +4926,7 @@ function BelanjaTabOwner({ belanja, showToast, loadData }) {
                   <option value="">— tidak ada —</option>
                   {Object.entries(SUMBER_DANA_LABEL).filter(([k]) => k !== 'talangan' && k !== editSumber).map(([k, l]) => <option key={k} value={k}>{l}</option>)}
                 </select>
-                <input type="number" inputMode="numeric" value={editJumlah2} onChange={e => setEditJumlah2(e.target.value)} placeholder="Rp dari sumber kedua" disabled={!editSumber2} style={{ ...S.input, opacity: editSumber2 ? 1 : 0.5 }} />
+                <RpInput value={editJumlah2} onChange={setEditJumlah2} placeholder="Rp dari sumber kedua" disabled={!editSumber2} style={{ ...S.input, opacity: editSumber2 ? 1 : 0.5 }} />
               </div>
               <label style={S.label}>Catatan</label>
               <textarea rows={2} value={editCatatan} onChange={e => setEditCatatan(e.target.value)} style={{ ...S.input, marginBottom: '4px' }} placeholder="Catatan tambahan..." />
@@ -4943,7 +4943,7 @@ function BelanjaTabOwner({ belanja, showToast, loadData }) {
                   <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '6px' }}>
                     <div><div style={{ fontSize: '10px', color: C.text3, marginBottom: '3px' }}>Jumlah</div><input type="number" value={item.jumlah} onChange={e => updateEditItem(idx, 'jumlah', e.target.value)} placeholder="0" style={S.input} /></div>
                     <div><div style={{ fontSize: '10px', color: C.text3, marginBottom: '3px' }}>Satuan</div><input type="text" value={item.satuan} onChange={e => updateEditItem(idx, 'satuan', e.target.value)} placeholder="kg/gram..." style={S.input} /></div>
-                    <div><div style={{ fontSize: '10px', color: C.text3, marginBottom: '3px' }}>Harga (Rp)</div><input type="number" value={item.harga} onChange={e => updateEditItem(idx, 'harga', e.target.value)} placeholder="0" style={S.input} /></div>
+                    <div><div style={{ fontSize: '10px', color: C.text3, marginBottom: '3px' }}>Harga (Rp)</div><RpInput value={item.harga} onChange={v => updateEditItem(idx, 'harga', v)} placeholder="0" style={S.input} /></div>
                   </div>
                 </div>
               ))}
