@@ -3455,12 +3455,12 @@ function StokListView({ bahanBaku, showToast, loadData, logAudit, userName, role
   const perluKode = (b) => !b.kode_accurate && b.status_accurate !== 'tidak_perlu'
   const tanpaKode = bahanBaku.filter(b => b.is_active && perluKode(b)).length
 
-  // Update stok terakhir per bahan (dari menu Update Stok), supaya nama & tanggalnya terlihat di sini juga.
-  // Diambil dari view update_stok_terakhir; dimuat ulang tiap data bahan berubah.
+  // Perubahan stok terakhir per bahan dari SEMUA jalur (Update Stok, Produksi, Belanja, Waste, Tambah Stok),
+  // supaya Daftar Stok sinkron dengan Laporan Produksi dan Nota. Diambil dari view perubahan_stok_terakhir.
   const [updateTerakhir, setUpdateTerakhir] = useState({})
   useEffect(() => {
     let batal = false
-    supabase.from('update_stok_terakhir').select('*').then(({ data }) => {
+    supabase.from('perubahan_stok_terakhir').select('*').then(({ data }) => {
       if (batal || !data) return
       setUpdateTerakhir(Object.fromEntries(data.map(r => [r.bahan_id, r])))
     })
@@ -3648,13 +3648,15 @@ function StokListView({ bahanBaku, showToast, loadData, logAudit, userName, role
 
       {filtered.map(b => {
         const statusColor = b.stok_saat_ini < b.stok_minimum ? 'red' : b.stok_saat_ini < b.stok_minimum * 1.5 ? 'yellow' : 'greenLight'
-        // Status update stok: bunyinya SAMA dengan di menu Update Stok supaya tidak membingungkan
+        // Status perubahan stok terakhir: jenisnya disebut (Dihitung / Produksi / Belanja / ...) supaya jelas
+        // dari mana angka stok berubah, dan sinkron dengan Laporan Produksi & Nota.
         const u = updateTerakhir[b.id]
         const updHariIni = !!u && u.tanggal === todayStr
         const updJam = u?.created_at ? new Date(u.created_at).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' }) : ''
-        const updTeks = !u ? '⚠️ Belum pernah diupdate'
-          : updHariIni ? `✅ Diupdate ${formatTanggalID(u.tanggal)} ${updJam} oleh ${u.yang_closing || '-'}`
-          : `⚠️ Terakhir: ${formatTanggalID(u.tanggal)} ${updJam} oleh ${u.yang_closing || '-'}`
+        const JENIS_LABEL = { 'Update Stok': 'Dihitung', 'Produksi': 'Produksi', 'Dipakai produksi': 'Dipakai produksi', 'Belanja': 'Belanja masuk', 'Waste': 'Waste', 'Tambah Stok': 'Tambah stok' }
+        const updJenis = u ? (JENIS_LABEL[u.jenis] || u.jenis) : ''
+        const updTeks = !u ? '⚠️ Belum ada perubahan stok tercatat'
+          : `${updHariIni ? '✅' : '⚠️ Terakhir:'} ${updJenis} ${formatTanggalID(u.tanggal)} ${updJam} oleh ${u.siapa || '-'}`
         const btnKecil = { padding: '7px 8px', fontSize: '11px', borderRadius: '6px', cursor: 'pointer', fontWeight: 600 }
         return (
           <div key={b.id} style={{
