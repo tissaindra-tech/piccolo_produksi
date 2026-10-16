@@ -3098,9 +3098,9 @@ function ClosingView({ bahanBaku, closing, showToast, loadData, logAudit, userNa
             {/* Last update info */}
             <div style={{ fontSize: '10px', color: sudahHariIni ? C.green : C.yellow, marginTop: '6px' }}>
               {sudahHariIni
-                ? `✅ Diupdate ${new Date(last.created_at).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' })} oleh ${last.yang_closing}`
+                ? `✅ Diupdate ${formatTanggalID(last.tanggal)} ${new Date(last.created_at).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' })} oleh ${last.yang_closing}`
                 : last
-                  ? `⚠️ Terakhir: ${formatTanggalID(last.tanggal)} oleh ${last.yang_closing}`
+                  ? `⚠️ Terakhir: ${formatTanggalID(last.tanggal)}${last.created_at ? ' ' + new Date(last.created_at).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' }) : ''} oleh ${last.yang_closing}`
                   : '⚠️ Belum pernah diupdate'
               }
             </div>
@@ -3653,8 +3653,8 @@ function StokListView({ bahanBaku, showToast, loadData, logAudit, userName, role
         const updHariIni = !!u && u.tanggal === todayStr
         const updJam = u?.created_at ? new Date(u.created_at).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' }) : ''
         const updTeks = !u ? '⚠️ Belum pernah diupdate'
-          : updHariIni ? `✅ Diupdate ${updJam} oleh ${u.yang_closing || '-'}`
-          : `⚠️ Terakhir: ${formatTanggalID(u.tanggal)} oleh ${u.yang_closing || '-'}`
+          : updHariIni ? `✅ Diupdate ${formatTanggalID(u.tanggal)} ${updJam} oleh ${u.yang_closing || '-'}`
+          : `⚠️ Terakhir: ${formatTanggalID(u.tanggal)} ${updJam} oleh ${u.yang_closing || '-'}`
         const btnKecil = { padding: '7px 8px', fontSize: '11px', borderRadius: '6px', cursor: 'pointer', fontWeight: 600 }
         return (
           <div key={b.id} style={{
