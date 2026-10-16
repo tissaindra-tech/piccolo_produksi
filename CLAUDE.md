@@ -6,3 +6,5 @@
   di index.html), dan menu bawah di App.jsx tingginya 70px + safe-area.
 - Owner (Tissa) tidak punya latar belakang coding: jelaskan langkah demi langkah dalam bahasa
   Indonesia, sebutkan di mana tombolnya.
+- JANGAN memanggil owner dengan "Ibu" / "Bu". Sapa dengan nama (Tissa) atau "kamu". Ini sudah
+  diminta berkali-kali.

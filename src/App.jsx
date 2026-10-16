@@ -3098,9 +3098,9 @@ function ClosingView({ bahanBaku, closing, showToast, loadData, logAudit, userNa
             {/* Last update info */}
             <div style={{ fontSize: '10px', color: sudahHariIni ? C.green : C.yellow, marginTop: '6px' }}>
               {sudahHariIni
-                ? `✅ Diupdate ${new Date(last.created_at).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' })} oleh ${last.yang_closing}`
+                ? `✅ Diupdate ${formatTanggalID(last.tanggal)} ${new Date(last.created_at).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' })} oleh ${last.yang_closing}`
                 : last
-                  ? `⚠️ Terakhir: ${formatTanggalID(last.tanggal)} oleh ${last.yang_closing}`
+                  ? `⚠️ Terakhir: ${formatTanggalID(last.tanggal)}${last.created_at ? ' ' + new Date(last.created_at).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' }) : ''} oleh ${last.yang_closing}`
                   : '⚠️ Belum pernah diupdate'
               }
             </div>
@@ -3436,7 +3436,7 @@ function BahanFormModal({ mode, initial, onClose, showToast, loadData, logAudit,
 // =====================================================
 // STOK LIST VIEW (with Tambah/Edit Bahan)
 // =====================================================
-function StokListView({ bahanBaku, showToast, loadData, logAudit, userName, role, mintaBeli }) {
+function StokListView({ bahanBaku, showToast, loadData, logAudit, userName, role, mintaBeli, setView }) {
   const isOwner = role === 'owner'
   const [filterFrek, setFilterFrek] = useState('all')
   const toggleFrek = async (b) => {
@@ -3454,6 +3454,19 @@ function StokListView({ bahanBaku, showToast, loadData, logAudit, userName, role
   const [onlyNoKode, setOnlyNoKode] = useState(false)
   const perluKode = (b) => !b.kode_accurate && b.status_accurate !== 'tidak_perlu'
   const tanpaKode = bahanBaku.filter(b => b.is_active && perluKode(b)).length
+
+  // Update stok terakhir per bahan (dari menu Update Stok), supaya nama & tanggalnya terlihat di sini juga.
+  // Diambil dari view update_stok_terakhir; dimuat ulang tiap data bahan berubah.
+  const [updateTerakhir, setUpdateTerakhir] = useState({})
+  useEffect(() => {
+    let batal = false
+    supabase.from('update_stok_terakhir').select('*').then(({ data }) => {
+      if (batal || !data) return
+      setUpdateTerakhir(Object.fromEntries(data.map(r => [r.bahan_id, r])))
+    })
+    return () => { batal = true }
+  }, [bahanBaku])
+  const todayStr = formatTanggal()
 
   const filtered = bahanBaku.filter(b => {
     if (!b.is_active) return false
@@ -3543,7 +3556,7 @@ function StokListView({ bahanBaku, showToast, loadData, logAudit, userName, role
         )}
       </div>
       <p style={{ fontSize: '12px', color: C.text3, marginBottom: '12px' }}>
-        {isOwner ? 'Tap bahan → update stok atau edit data' : 'Tap bahan → update stok atau edit data. Bahan baru minta ditambahkan owner lewat WA atau Request.'}
+        {isOwner ? 'Tap bahan → update stok atau edit data' : 'Lihat stok & status update. Menghitung stok lewat menu Update Stok. Bahan baru minta ditambahkan owner lewat WA atau Request.'}
       </p>
 
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '6px', marginBottom: '12px' }}>
@@ -3635,57 +3648,87 @@ function StokListView({ bahanBaku, showToast, loadData, logAudit, userName, role
 
       {filtered.map(b => {
         const statusColor = b.stok_saat_ini < b.stok_minimum ? 'red' : b.stok_saat_ini < b.stok_minimum * 1.5 ? 'yellow' : 'greenLight'
+        // Status update stok: bunyinya SAMA dengan di menu Update Stok supaya tidak membingungkan
+        const u = updateTerakhir[b.id]
+        const updHariIni = !!u && u.tanggal === todayStr
+        const updJam = u?.created_at ? new Date(u.created_at).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' }) : ''
+        const updTeks = !u ? '⚠️ Belum pernah diupdate'
+          : updHariIni ? `✅ Diupdate ${formatTanggalID(u.tanggal)} ${updJam} oleh ${u.yang_closing || '-'}`
+          : `⚠️ Terakhir: ${formatTanggalID(u.tanggal)} ${updJam} oleh ${u.yang_closing || '-'}`
+        const btnKecil = { padding: '7px 8px', fontSize: '11px', borderRadius: '6px', cursor: 'pointer', fontWeight: 600 }
         return (
           <div key={b.id} style={{
             background: C[statusColor + 'Bg'], borderLeft: `3px solid ${C[statusColor + 'Border']}`,
             padding: '11px 12px', borderRadius: '8px', marginBottom: '6px',
           }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-              <div style={{ flex: 1 }}>
-                <div style={{ fontSize: '13px', fontWeight: 600 }}>{b.nama}
-                  <span style={{ fontSize: '10px', color: C.text3, fontWeight: 400, marginLeft: '5px' }}>({b.kategori} · {b.divisi})</span>
+            {/* Baris 1: nama + stok sistem */}
+            <div style={{ display: 'flex', alignItems: 'flex-start', gap: '8px' }}>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ fontSize: '13px', fontWeight: 600 }}>{b.nama}</div>
+                <div style={{ fontSize: '11px', color: C.text3, marginTop: '2px' }}>
+                  {b.kategori} · {b.divisi} · <span style={{ color: C[statusColor] }}>Min {b.stok_minimum} {b.satuan_dasar}</span>
+                  {isOwner && b.harga_per_satuan > 0 ? ` · ${formatRupiah(b.harga_per_satuan)}/${b.satuan_dasar}` : ''}
                 </div>
-                <div style={{ fontSize: '11px', color: C[statusColor], marginTop: '2px' }}>
-                  Min {b.stok_minimum} {b.satuan_dasar}{b.harga_per_satuan > 0 ? ` · ${formatRupiah(b.harga_per_satuan)}/${b.satuan_dasar}` : ''}
-                </div>
-                {(role === 'owner' || b.kode_accurate) && (
-                <div style={{ fontSize: '10px', marginTop: '2px', fontFamily: 'monospace',
-                  color: b.kode_accurate ? C.green : b.status_accurate === 'tidak_perlu' ? C.text3 : b.status_accurate === 'buat_baru' ? C.yellow : C.red }}>
-                  {b.kode_accurate ? `Accurate ${b.kode_accurate}${role === 'owner' && b.nama_accurate ? ' · ' + b.nama_accurate : ''}`
-                    : b.status_accurate === 'tidak_perlu' ? 'cukup di aplikasi, tidak ke Accurate'
-                    : b.status_accurate === 'buat_baru' ? 'perlu dibuat di Accurate'
-                    : 'belum terhubung ke Accurate'}
-                </div>)}
-                <button onClick={() => role === 'owner' ? toggleFrek(b) : showToast('Hanya owner yang bisa mengubah ini')} style={{
-                  marginTop: '4px', padding: '2px 8px', fontSize: '10px', borderRadius: '99px', cursor: 'pointer',
-                  border: `1px solid ${b.frekuensi_hitung === 'harian' ? C.greenLightBorder : C.border}`,
-                  background: b.frekuensi_hitung === 'harian' ? C.greenLightBg : C.panel2,
-                  color: b.frekuensi_hitung === 'harian' ? C.greenLight : C.text3,
-                }}>{b.frekuensi_hitung === 'harian' ? '☀️ hitung tiap hari' : '📦 hanya saat opname'}{role === 'owner' ? ' · ubah' : ''}</button>
               </div>
-              <div style={{ fontSize: '15px', fontWeight: 700, color: C[statusColor] }}>{b.stok_saat_ini} {b.satuan_dasar}</div>
+              <div style={{ textAlign: 'right', flexShrink: 0 }}>
+                <div style={{ fontSize: '10px', color: C.text3 }}>Stok sistem</div>
+                <div style={{ fontSize: '16px', fontWeight: 700, color: C[statusColor] }}>{b.stok_saat_ini} {b.satuan_dasar}</div>
+              </div>
             </div>
+
+            {/* Baris 2: status update stok (dari menu Update Stok) — sama persis dengan yang dilihat staff */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginTop: '7px', flexWrap: 'wrap' }}>
+              <span style={{
+                fontSize: '11px', fontWeight: 600, padding: '3px 9px', borderRadius: '99px',
+                background: updHariIni ? C.greenBg : C.yellowBg, color: updHariIni ? C.green : C.yellow,
+                border: `1px solid ${updHariIni ? C.greenBorder : C.yellowBorder}`,
+              }}>{updTeks}</span>
+              <button onClick={() => isOwner ? toggleFrek(b) : showToast('Hanya owner yang bisa mengubah ini')} style={{
+                padding: '3px 8px', fontSize: '10px', borderRadius: '99px', cursor: isOwner ? 'pointer' : 'default',
+                border: `1px solid ${b.frekuensi_hitung === 'harian' ? C.greenLightBorder : C.border}`,
+                background: b.frekuensi_hitung === 'harian' ? C.greenLightBg : C.panel2,
+                color: b.frekuensi_hitung === 'harian' ? C.greenLight : C.text3,
+              }}>{b.frekuensi_hitung === 'harian' ? '☀️ hitung tiap hari' : '📦 hanya saat opname'}{isOwner ? ' · ubah' : ''}</button>
+            </div>
+
+            {/* Baris 3 (owner saja): kaitan ke Accurate */}
+            {isOwner && (
+              <div style={{ fontSize: '10px', marginTop: '6px', fontFamily: 'monospace',
+                color: b.kode_accurate ? C.green : b.status_accurate === 'tidak_perlu' ? C.text3 : b.status_accurate === 'buat_baru' ? C.yellow : C.red }}>
+                {b.kode_accurate ? `Accurate ${b.kode_accurate}${b.nama_accurate ? ' · ' + b.nama_accurate : ''}`
+                  : b.status_accurate === 'tidak_perlu' ? 'cukup di aplikasi, tidak ke Accurate'
+                  : b.status_accurate === 'buat_baru' ? 'perlu dibuat di Accurate'
+                  : 'belum terhubung ke Accurate'}
+              </div>
+            )}
+
+            {/* Baris 4: aksi. Request order hanya saat stok rendah.
+                Staff: hanya Request order + jalan pintas ke menu Update Stok (satu-satunya cara staff mengubah stok).
+                Owner: + Tambah Stok, Edit, hapus (tombol ringan supaya tidak ramai). */}
             <div style={{ display: 'flex', gap: '6px', marginTop: '8px' }}>
               {statusColor !== 'greenLight' && mintaBeli && (
-                <button onClick={() => mintaBeli(b)} style={{
-                  flex: 2, padding: '6px', fontSize: '11px', fontWeight: 700, borderRadius: '6px',
-                  background: C.sun, color: C.text, border: `1px solid ${C.sun}`, cursor: 'pointer',
-                }}>{dibuatSendiri(b) ? '👨‍🍳 Perlu produksi' : '🛒 Request order'}</button>
+                <button onClick={() => mintaBeli(b)} style={{ ...btnKecil, flex: 2, fontWeight: 700, background: C.sun, color: C.text, border: `1px solid ${C.sun}` }}>
+                  {dibuatSendiri(b) ? '👨‍🍳 Perlu produksi' : '🛒 Request order'}
+                </button>
               )}
-              <button onClick={() => setModal({ mode: 'stok', initial: b })} style={{
-                flex: 2, padding: '6px', fontSize: '11px', fontWeight: 600, borderRadius: '6px',
-                background: C.greenBg, color: C.green, border: `1px solid ${C.greenBorder}`, cursor: 'pointer',
-              }}>📦 + Tambah Stok</button>
-              <button onClick={() => setModal({ mode: 'edit', initial: b })} style={{
-                flex: 1, padding: '6px', fontSize: '11px', borderRadius: '6px',
-                background: 'transparent', color: C.text3, border: `1px solid ${C.border}`, cursor: 'pointer',
-              }}>✏️ Edit</button>
-              {isOwner && (
-                <button onClick={() => setModal({ mode: 'hapus', initial: b })} style={{
-                  padding: '6px 8px', fontSize: '11px', borderRadius: '6px',
-                  background: C.redBg, color: C.red, border: `1px solid ${C.redBorder}`, cursor: 'pointer',
-                }}>🗑️</button>
+              {!isOwner && setView && (
+                <button onClick={() => setView('closing')}
+                  style={{ ...btnKecil, flex: 2, fontWeight: 400, background: 'transparent', color: C.text3, border: `1px solid ${C.border}` }}>
+                  📋 Hitung di Update Stok
+                </button>
               )}
+              {isOwner && (<>
+                <button onClick={() => setModal({ mode: 'stok', initial: b })} title="Menambah angka stok tanpa nota, mis. barang datang tanpa struk"
+                  style={{ ...btnKecil, flex: 2, background: 'transparent', color: C.green, border: `1px solid ${C.greenBorder}` }}>
+                  📦 + Tambah Stok
+                </button>
+                <button onClick={() => setModal({ mode: 'edit', initial: b })}
+                  style={{ ...btnKecil, flex: 1, fontWeight: 400, background: 'transparent', color: C.text3, border: `1px solid ${C.border}` }}>
+                  ✏️ Edit
+                </button>
+                <button onClick={() => setModal({ mode: 'hapus', initial: b })}
+                  style={{ ...btnKecil, padding: '7px 9px', background: 'transparent', color: C.red, border: `1px solid ${C.redBorder}` }}>🗑️</button>
+              </>)}
             </div>
           </div>
         )
