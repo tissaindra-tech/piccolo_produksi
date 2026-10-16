@@ -3455,6 +3455,19 @@ function StokListView({ bahanBaku, showToast, loadData, logAudit, userName, role
   const perluKode = (b) => !b.kode_accurate && b.status_accurate !== 'tidak_perlu'
   const tanpaKode = bahanBaku.filter(b => b.is_active && perluKode(b)).length
 
+  // Update stok terakhir per bahan (dari menu Update Stok), supaya nama & tanggalnya terlihat di sini juga.
+  // Diambil dari view update_stok_terakhir; dimuat ulang tiap data bahan berubah.
+  const [updateTerakhir, setUpdateTerakhir] = useState({})
+  useEffect(() => {
+    let batal = false
+    supabase.from('update_stok_terakhir').select('*').then(({ data }) => {
+      if (batal || !data) return
+      setUpdateTerakhir(Object.fromEntries(data.map(r => [r.bahan_id, r])))
+    })
+    return () => { batal = true }
+  }, [bahanBaku])
+  const todayStr = formatTanggal()
+
   const filtered = bahanBaku.filter(b => {
     if (!b.is_active) return false
     if (onlyNoKode && !perluKode(b)) return false
@@ -3665,6 +3678,20 @@ function StokListView({ bahanBaku, showToast, loadData, logAudit, userName, role
               </div>
               <div style={{ fontSize: '15px', fontWeight: 700, color: C[statusColor] }}>{b.stok_saat_ini} {b.satuan_dasar}</div>
             </div>
+            {/* Update stok terakhir: nama, tanggal, jam, dan keterangannya (sama dengan di menu Update Stok) */}
+            {(() => {
+              const u = updateTerakhir[b.id]
+              if (!u) return <div style={{ fontSize: '10.5px', color: C.yellow, marginTop: '5px' }}>⚠️ Belum pernah diupdate lewat Update Stok</div>
+              const hariIni = u.tanggal === todayStr
+              const jam = u.created_at ? new Date(u.created_at).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' }) : ''
+              const selisih = Number(u.sisa_aktual) - Number(u.prediksi_sistem)
+              return (
+                <div style={{ fontSize: '10.5px', color: hariIni ? C.green : C.text3, marginTop: '5px' }}>
+                  {hariIni ? '✅ Diupdate hari ini' : `🕒 Update terakhir ${formatTanggalID(u.tanggal)}`} {jam} oleh <strong>{u.yang_closing || '-'}</strong>
+                  {' · '}{u.prediksi_sistem} → {u.sisa_aktual} {b.satuan_dasar} ({selisih > 0 ? '+' : ''}{selisih}{u.catatan ? `, ${u.catatan}` : ''})
+                </div>
+              )
+            })()}
             <div style={{ display: 'flex', gap: '6px', marginTop: '8px' }}>
               {statusColor !== 'greenLight' && mintaBeli && (
                 <button onClick={() => mintaBeli(b)} style={{
