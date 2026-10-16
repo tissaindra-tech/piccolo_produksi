@@ -3436,7 +3436,7 @@ function BahanFormModal({ mode, initial, onClose, showToast, loadData, logAudit,
 // =====================================================
 // STOK LIST VIEW (with Tambah/Edit Bahan)
 // =====================================================
-function StokListView({ bahanBaku, showToast, loadData, logAudit, userName, role, mintaBeli }) {
+function StokListView({ bahanBaku, showToast, loadData, logAudit, userName, role, mintaBeli, setView }) {
   const isOwner = role === 'owner'
   const [filterFrek, setFilterFrek] = useState('all')
   const toggleFrek = async (b) => {
@@ -3556,7 +3556,7 @@ function StokListView({ bahanBaku, showToast, loadData, logAudit, userName, role
         )}
       </div>
       <p style={{ fontSize: '12px', color: C.text3, marginBottom: '12px' }}>
-        {isOwner ? 'Tap bahan → update stok atau edit data' : 'Tap bahan → update stok atau edit data. Bahan baru minta ditambahkan owner lewat WA atau Request.'}
+        {isOwner ? 'Tap bahan → update stok atau edit data' : 'Lihat stok & status update. Menghitung stok lewat menu Update Stok. Bahan baru minta ditambahkan owner lewat WA atau Request.'}
       </p>
 
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '6px', marginBottom: '12px' }}>
@@ -3702,25 +3702,33 @@ function StokListView({ bahanBaku, showToast, loadData, logAudit, userName, role
               </div>
             )}
 
-            {/* Baris 4: aksi. Request order hanya saat stok rendah; sisanya tombol ringan supaya tidak ramai */}
+            {/* Baris 4: aksi. Request order hanya saat stok rendah.
+                Staff: hanya Request order + jalan pintas ke menu Update Stok (satu-satunya cara staff mengubah stok).
+                Owner: + Tambah Stok, Edit, hapus (tombol ringan supaya tidak ramai). */}
             <div style={{ display: 'flex', gap: '6px', marginTop: '8px' }}>
               {statusColor !== 'greenLight' && mintaBeli && (
                 <button onClick={() => mintaBeli(b)} style={{ ...btnKecil, flex: 2, fontWeight: 700, background: C.sun, color: C.text, border: `1px solid ${C.sun}` }}>
                   {dibuatSendiri(b) ? '👨‍🍳 Perlu produksi' : '🛒 Request order'}
                 </button>
               )}
-              <button onClick={() => setModal({ mode: 'stok', initial: b })} title="Menambah angka stok tanpa nota, mis. barang datang tanpa struk"
-                style={{ ...btnKecil, flex: 2, background: 'transparent', color: C.green, border: `1px solid ${C.greenBorder}` }}>
-                📦 + Tambah Stok
-              </button>
-              <button onClick={() => setModal({ mode: 'edit', initial: b })}
-                style={{ ...btnKecil, flex: 1, fontWeight: 400, background: 'transparent', color: C.text3, border: `1px solid ${C.border}` }}>
-                ✏️ Edit
-              </button>
-              {isOwner && (
+              {!isOwner && setView && (
+                <button onClick={() => setView('closing')}
+                  style={{ ...btnKecil, flex: 2, fontWeight: 400, background: 'transparent', color: C.text3, border: `1px solid ${C.border}` }}>
+                  📋 Hitung di Update Stok
+                </button>
+              )}
+              {isOwner && (<>
+                <button onClick={() => setModal({ mode: 'stok', initial: b })} title="Menambah angka stok tanpa nota, mis. barang datang tanpa struk"
+                  style={{ ...btnKecil, flex: 2, background: 'transparent', color: C.green, border: `1px solid ${C.greenBorder}` }}>
+                  📦 + Tambah Stok
+                </button>
+                <button onClick={() => setModal({ mode: 'edit', initial: b })}
+                  style={{ ...btnKecil, flex: 1, fontWeight: 400, background: 'transparent', color: C.text3, border: `1px solid ${C.border}` }}>
+                  ✏️ Edit
+                </button>
                 <button onClick={() => setModal({ mode: 'hapus', initial: b })}
                   style={{ ...btnKecil, padding: '7px 9px', background: 'transparent', color: C.red, border: `1px solid ${C.redBorder}` }}>🗑️</button>
-              )}
+              </>)}
             </div>
           </div>
         )
