@@ -281,6 +281,11 @@ function KartuItem({ item, waktu, konten, userName, ubah, showToast, setView, bu
       </div>
 
       {/* Tambahan per tugas */}
+      {t.tambahan_hari?.[waktu.hari] && (
+        <div style={{ marginTop: '10px', background: C.blueBg, border: `1.5px solid ${C.blueBorder}`, borderRadius: '10px', padding: '10px 12px', fontSize: '14px', color: C.text }}>
+          📌 <strong>Khusus hari ini ({HARI_NAMA[waktu.hari]}):</strong> {t.tambahan_hari[waktu.hari]}
+        </div>
+      )}
       {t.lampiran === 'bersih_mingguan' && (
         <div style={{ marginTop: '10px', background: C.panel, borderRadius: '10px', padding: '10px 12px', fontSize: '14px', color: C.text }}>
           🧽 <strong>Hari ini ({HARI_NAMA[waktu.hari]}):</strong> {bersihHariIni || '-'}
@@ -289,6 +294,9 @@ function KartuItem({ item, waktu, konten, userName, ubah, showToast, setView, bu
       )}
       {t.lampiran === 'tidak_ada_tamu' && !sudah && (
         <button onClick={bukaTamu} style={{ ...S.btn, ...S.btnSecondary, width: '100%', minHeight: '48px', fontSize: '15px', marginTop: '10px', background: C.panel }}>🍽️ Pilih dari daftar "Saat Tidak Ada Tamu"</button>
+      )}
+      {t.lampiran === 'update_stok' && !sudah && (
+        <button onClick={() => { setView('closing'); window.scrollTo({ top: 0 }) }} style={{ ...S.btn, ...S.btnSecondary, width: '100%', minHeight: '48px', fontSize: '15px', marginTop: '10px', background: C.panel }}>📋 Buka menu Update Stok</button>
       )}
       {t.lampiran === 'produksi' && !sudah && (
         <button onClick={() => { setView('produksi'); window.scrollTo({ top: 0 }) }} style={{ ...S.btn, ...S.btnSecondary, width: '100%', minHeight: '48px', fontSize: '15px', marginTop: '10px', background: C.panel }}>🍳 Buka menu Produksi</button>
