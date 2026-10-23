@@ -21,6 +21,12 @@ const NOTA_EDIT_LOCK_DAYS = 30  // nota tidak bisa diedit setelah 30 hari
 const HARI = ['Minggu', 'Senin', 'Selasa', 'Rabu', 'Kamis', 'Jumat', 'Sabtu']
 const ALASAN_WASTE = ['Busuk / expired', 'Gosong', 'Tumpah / jatuh', 'Salah masak', 'Lainnya']
 
+// Barang penting: ditandai owner di Daftar Stok sebagai 'fast' (fast moving, cepat habis) atau 'crucial'
+// (kalau kosong, menu berhenti). Barang penting SELALU ikut dihitung tiap hari, apa pun frekuensi_hitung-nya,
+// dan muncul di kartu sapaan Home staff (per divisi Bar / Kitchen).
+const PRIORITAS_LABEL = { fast: 'Fast moving', crucial: 'Crucial' }
+const hitungHarian = (b) => b.frekuensi_hitung === 'harian' || !!b.prioritas
+
 // Cek apakah nota masih bisa diedit
 const isNotaEditable = (tanggal) => {
   const hari = Math.floor((new Date() - new Date(tanggal)) / (1000 * 60 * 60 * 24))
@@ -373,6 +379,7 @@ export default function App() {
   const [penjualan, setPenjualan] = useState([])
   const [requests, setRequests] = useState([])
   const [requestDraft, setRequestDraft] = useState(null)   // bahan yang mau langsung di-request dari layar stok
+  const [fokusStok, setFokusStok] = useState(null)   // { cari?, hanyaPenting?, hanyaBelum? } dari kartu sapaan Home → Update Stok
   const [bukaNotaId, setBukaNotaId] = useState(null)       // nota yang mau langsung dibuka di Riwayat Belanja (dari Rekap Harian)
   const [lastClosingTanggal, setLastClosingTanggal] = useState(null)
   const [settings, setSettings] = useState({})
@@ -541,6 +548,9 @@ export default function App() {
 
   const props = {
     role, userName, setUserName, view, setView, currentUser, bisaPenjualan, opname, saveSetting, settings,
+    fokusStok, setFokusStok,
+    // Dari kartu sapaan Home: buka Update Stok langsung ke barang tertentu ({ cari }) atau ke daftar barang penting yang belum ({ hanyaPenting, hanyaBelum })
+    bukaUpdateStok: (f) => { setFokusStok(f || null); setView('closing'); window.scrollTo({ top: 0 }) },
     bahanBaku, produksi, belanja, closing, waste, auditLog, penjualan, requests, setRequests, requestDraft, setRequestDraft,
     bukaNotaId, setBukaNotaId,
     // Dari Rekap Harian: tap ✏️ di nota → buka nota itu di Riwayat Belanja (di sana ada Edit & Hapus)
@@ -812,11 +822,70 @@ function HomeView(props) {
   return <StaffHome {...props} />
 }
 
-function StaffHome({ bahanBaku, produksi, belanja, closing, penjualan, requests = [], daysSinceClosing, setView, userName, bisaPenjualan, opname }) {
+// Barang penting (fast moving / crucial) hari ini: dipakai kartu sapaan Home staff dan kartu pantau Home owner.
+// Dikelompokkan per divisi (Bar / Kitchen / Bar & Kitchen); divisi staff sendiri paling atas.
+function hitungBarangPenting(bahanBaku, closing, divisiStaff) {
   const today = formatTanggal()
+  const kemarin = formatTanggal(new Date(Date.now() - 86400000))
+  const lastClosing = {}
+  closing.forEach(c => { if (!lastClosing[c.bahan_id] || c.created_at > lastClosing[c.bahan_id].created_at) lastClosing[c.bahan_id] = c })
+  const sudahHariIni = (b) => lastClosing[b.id]?.tanggal === today
+  const penting = bahanBaku.filter(b => b.is_active && b.prioritas)
+  const pentingBelum = penting.filter(b => !sudahHariIni(b))
+  const grupDivisi = (b) => b.divisi === 'Bar' ? 'Bar' : b.divisi === 'Kitchen' ? 'Kitchen' : 'Bar & Kitchen'
+  const urutan = ['Bar', 'Kitchen', 'Bar & Kitchen'].sort((a, b) => (a === divisiStaff ? -1 : b === divisiStaff ? 1 : 0))
+  const grup = urutan
+    .map(d => ({ divisi: d, items: penting.filter(b => grupDivisi(b) === d).sort((a, b) => (sudahHariIni(a) ? 1 : 0) - (sudahHariIni(b) ? 1 : 0) || a.nama.localeCompare(b.nama)) }))
+    .filter(g => g.items.length > 0)
+  const labelTerakhir = (b) => {
+    const c = lastClosing[b.id]
+    if (!c) return 'Belum pernah dihitung'
+    const jam = new Date(c.created_at).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' })
+    const hari = c.tanggal === today ? 'Hari ini' : c.tanggal === kemarin ? 'Kemarin' : formatTanggalID(c.tanggal)
+    return `${hari} ${jam} · ${c.sisa_aktual} ${b.satuan_dasar}${c.tanggal === today ? ` · oleh ${c.yang_closing || '-'}` : ''}`
+  }
+  return { penting, pentingBelum, grup, sudahHariIni, labelTerakhir }
+}
+
+function DaftarBarangPenting({ data, divisiStaff, onTap, radius = '0 0 10px 10px' }) {
+  const { grup, sudahHariIni, labelTerakhir } = data
+  return (
+    <div style={{ border: `1.5px solid ${C.border}`, borderRadius: radius, overflow: 'hidden' }}>
+      {grup.map(g => (
+        <div key={g.divisi}>
+          <div style={{ padding: '8px 12px 4px', fontSize: '10px', fontWeight: 700, color: C.text3, textTransform: 'uppercase', letterSpacing: '0.06em', borderTop: `1px solid ${C.panel2}` }}>
+            {g.divisi === 'Bar' ? '🥤 Bar' : g.divisi === 'Kitchen' ? '🍳 Kitchen' : '🏠 Bar & Kitchen'}{g.divisi === divisiStaff ? ' · divisimu' : ''} · {g.items.filter(b => !sudahHariIni(b)).length} belum
+          </div>
+          {g.items.map(b => {
+            const sudah = sudahHariIni(b)
+            return (
+              <button key={b.id} onClick={() => onTap(b)} style={{
+                font: 'inherit', width: '100%', display: 'flex', alignItems: 'center', gap: '10px', padding: '10px 12px', minHeight: '44px', textAlign: 'left',
+                border: 'none', borderTop: `1px solid ${C.panel2}`, background: 'transparent', color: C.text, cursor: 'pointer',
+              }}>
+                <div style={{ width: '20px', height: '20px', borderRadius: '50%', flexShrink: 0, boxSizing: 'border-box', background: sudah ? C.green : C.redBg, border: `2px solid ${sudah ? C.green : C.redBorder}`, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                  {sudah && <span style={{ color: '#fff', fontSize: '11px', fontWeight: 700 }}>✓</span>}
+                </div>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ fontSize: '13px', fontWeight: 600, color: sudah ? C.text3 : C.text }}>{b.nama} <span style={{ fontSize: '10px', fontWeight: 600, color: C.text3 }}>· {PRIORITAS_LABEL[b.prioritas] || b.prioritas}</span></div>
+                  <div style={{ fontSize: '11px', color: sudah ? C.green : C.text3, marginTop: '1px' }}>{labelTerakhir(b)}</div>
+                </div>
+                <span style={{ fontSize: '10px', fontWeight: 700, padding: '3px 8px', borderRadius: '99px', flexShrink: 0, background: sudah ? C.greenBg : C.redBg, color: sudah ? C.green : C.red }}>{sudah ? 'Sudah' : 'Belum'}</span>
+              </button>
+            )
+          })}
+        </div>
+      ))}
+    </div>
+  )
+}
+
+function StaffHome({ bahanBaku, produksi, belanja, closing, penjualan, requests = [], daysSinceClosing, setView, userName, bisaPenjualan, opname, currentUser, bukaUpdateStok }) {
+  const today = formatTanggal()
+  const [bukaPenting, setBukaPenting] = useState(true)   // dropdown daftar barang penting di kartu sapaan: terbuka dari awal, bisa dilipat
   // Hari biasa: hanya bahan 'harian'. Hari opname: semua bahan.
   const isOpname = !!opname?.isToday
-  const targetBahan = bahanBaku.filter(b => b.is_active && (isOpname || b.frekuensi_hitung === 'harian'))
+  const targetBahan = bahanBaku.filter(b => b.is_active && (isOpname || hitungHarian(b)))
   const totalBahan = targetBahan.length
   const targetIds = new Set(targetBahan.map(b => b.id))
 
@@ -840,6 +909,12 @@ function StaffHome({ bahanBaku, produksi, belanja, closing, penjualan, requests 
 
   // Stok rendah
   const stokRendah = bahanBaku.filter(b => b.stok_saat_ini < b.stok_minimum && b.is_active)
+
+  // Barang penting (fast moving / crucial, ditandai owner) per divisi — divisi staff sendiri paling atas
+  const divisiStaff = currentUser?.divisi === 'Barista' ? 'Bar' : currentUser?.divisi
+  const dataPenting = hitungBarangPenting(bahanBaku, closing, divisiStaff)
+  const { penting, pentingBelum } = dataPenting
+  const namaDepan = (userName || 'Kak').trim().split(/\s+/)[0]
 
   // Aktivitas hari ini untuk feed — gabung produksi + belanja + closing, urutkan terbaru
   const activities = [
@@ -918,6 +993,63 @@ function StaffHome({ bahanBaku, produksi, belanja, closing, penjualan, requests 
           🔒 <strong>Stok belum diupdate {daysSinceClosing} hari!</strong> Segera update sebelum app terkunci.
         </div>
       )}
+
+      {/* Kartu sapaan: nama staff + barang penting (fast moving / crucial) yang belum diupdate hari ini, per divisi */}
+      {(() => {
+        const semuaBeres = penting.length > 0 && pentingBelum.length === 0
+        const av = avatarColor(userName)
+        const warnaTepi = penting.length === 0 ? C.border : semuaBeres ? C.greenBorder : C.redBorder
+        const pesan = penting.length === 0
+          ? 'Jangan lupa update stok harian ya.'
+          : semuaBeres ? 'Semua barang penting hari ini sudah kamu update.'
+          : pentingBelum.length === penting.length ? 'Kamu belum update barang harian yang penting-penting nih..'
+          : `Masih ada ${pentingBelum.length} barang penting yang belum diupdate nih..`
+        return (
+          <div style={{ background: C.panel, border: `1.5px solid ${warnaTepi}`, borderRadius: '14px', padding: '16px', marginBottom: '12px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+              <div style={{ width: '44px', height: '44px', borderRadius: '50%', flexShrink: 0, background: av.bg, color: av.fg, display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 700, fontSize: '15px' }}>{avatarInitial(userName)}</div>
+              <div style={{ minWidth: 0 }}>
+                <div style={{ fontSize: '18px', fontWeight: 800, letterSpacing: '-0.2px' }}>{semuaBeres ? `Mantap, ${namaDepan}!` : `Halo ${namaDepan}!`}</div>
+                <div style={{ fontSize: '13px', fontWeight: 600, marginTop: '2px', lineHeight: 1.35, color: penting.length === 0 ? C.text2 : semuaBeres ? C.green : C.red }}>{pesan}</div>
+              </div>
+            </div>
+
+            {penting.length > 0 && (
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px', background: semuaBeres ? C.greenBg : C.redBg, color: semuaBeres ? C.green : C.red, borderRadius: '10px', padding: '10px 12px', marginTop: '12px' }}>
+                <div style={{ fontSize: '12px', fontWeight: 600 }}>{semuaBeres ? `${penting.length} dari ${penting.length} barang penting sudah diisi` : `${pentingBelum.length} dari ${penting.length} barang penting belum diisi`}</div>
+                {!semuaBeres && <div style={{ fontSize: '11px', whiteSpace: 'nowrap' }}>Deadline 19:00</div>}
+              </div>
+            )}
+
+            {penting.length > 0 && (
+              <button onClick={() => setBukaPenting(v => !v)} style={{
+                font: 'inherit', width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '10px', marginTop: '12px',
+                padding: '12px 14px', borderRadius: bukaPenting ? '10px 10px 0 0' : '10px', border: `1.5px solid ${C.border}`, borderBottom: bukaPenting ? 'none' : `1.5px solid ${C.border}`,
+                background: bukaPenting ? C.panel2 : C.panel, color: C.text, fontSize: '13px', fontWeight: 600, cursor: 'pointer', minHeight: '44px',
+              }}>
+                <span style={{ display: 'flex', alignItems: 'center', gap: '8px' }}><Icon name="box" size={18} style={{ color: C.green }} /> Barang fast moving &amp; crucial</span>
+                <span style={{ color: C.text3, fontSize: '12px' }}>{bukaPenting ? '▲' : '▼'}</span>
+              </button>
+            )}
+
+            {penting.length > 0 && bukaPenting && (
+              <DaftarBarangPenting data={dataPenting} divisiStaff={divisiStaff} onTap={(b) => bukaUpdateStok({ cari: b.nama })} />
+            )}
+
+            {penting.length > 0 && !semuaBeres && (
+              <button onClick={() => bukaUpdateStok({ hanyaPenting: true, hanyaBelum: true })} style={{ ...S.btn, ...S.btnPrimary, width: '100%', marginTop: '12px', padding: '13px', fontSize: '14px' }}>
+                {bukaPenting ? `Isi ${pentingBelum.length} barang yang belum` : 'Update sekarang'}
+              </button>
+            )}
+            {penting.length > 0 && bukaPenting && !semuaBeres && (
+              <div style={{ fontSize: '11px', color: C.text3, textAlign: 'center', marginTop: '8px' }}>Tap satu baris untuk langsung isi barang itu saja</div>
+            )}
+            {semuaBeres && !stokSelesai && (
+              <div style={{ fontSize: '12px', color: C.text2, marginTop: '12px', lineHeight: 1.45 }}>Barang harian lainnya masih <strong>{totalBahan - updatedToday.size} dari {totalBahan}</strong> yang belum. Kalau sempat, lanjutkan ya.</div>
+            )}
+          </div>
+        )
+      })()}
 
       {/* Misi Harian Card */}
       <div style={{ background: C.panel, border: `1px solid ${C.border}`, borderRadius: '12px', padding: '14px 16px', marginBottom: '12px' }}>
@@ -1228,6 +1360,9 @@ function OwnerHome(props) {
   })
   const totalProduksiHariIni = produksi.filter(p => p.tanggal === formatTanggal()).length
   const totalBelanjaHariIni = belanja.filter(b => b.tanggal === formatTanggal()).length
+  // Pantau barang penting (fast moving / crucial) hari ini — daftar yang sama dengan yang dilihat staff di Home mereka
+  const dataPenting = hitungBarangPenting(bahanBaku, props.closing || [])
+  const [bukaPenting, setBukaPenting] = useState(true)
 
   return (
     <div>
@@ -1236,6 +1371,30 @@ function OwnerHome(props) {
         <StatCard color="blue" label="Belanja" value={totalBelanjaHariIni} onClick={() => setView('dashboard')} />
         <StatCard color="red" label="Stok Low" value={stokRendah.length} onClick={() => setShowStokLow(true)} />
         <StatCard color="red" label="Expiring" value={expiring.length} />
+      </div>
+
+      {/* Barang penting hari ini (fast moving / crucial). Ditandai di Daftar Stok; staff melihat daftar yang sama di Home mereka. */}
+      <div style={{ background: C.panel, border: `1.5px solid ${dataPenting.penting.length === 0 ? C.border : dataPenting.pentingBelum.length ? C.redBorder : C.greenBorder}`, borderRadius: '12px', padding: '12px 14px', marginBottom: '14px' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '8px' }}>
+          <div style={{ minWidth: 0 }}>
+            <div style={{ fontSize: '13px', fontWeight: 600 }}>⭐ Barang penting hari ini</div>
+            <div style={{ fontSize: '11px', color: dataPenting.penting.length === 0 ? C.text3 : dataPenting.pentingBelum.length ? C.red : C.green, marginTop: '1px' }}>
+              {dataPenting.penting.length === 0
+                ? 'Belum ada yang ditandai. Buka Daftar Stok → tap "Fast moving" / "Crucial" di bawah nama barang.'
+                : dataPenting.pentingBelum.length
+                  ? `${dataPenting.pentingBelum.length} dari ${dataPenting.penting.length} belum diupdate staff · deadline 19:00`
+                  : `Semua ${dataPenting.penting.length} barang sudah diupdate staff ✅`}
+            </div>
+          </div>
+          {dataPenting.penting.length > 0
+            ? <button onClick={() => setBukaPenting(v => !v)} style={{ ...S.btn, background: C.panel2, color: C.text, padding: '6px 10px', fontSize: '11px', flexShrink: 0 }}>{bukaPenting ? 'Tutup ▲' : 'Lihat ▼'}</button>
+            : <button onClick={() => setView('stoklist')} style={{ ...S.btn, background: C.panel2, color: C.text, padding: '6px 10px', fontSize: '11px', flexShrink: 0 }}>Tandai →</button>}
+        </div>
+        {dataPenting.penting.length > 0 && bukaPenting && (
+          <div style={{ marginTop: '10px' }}>
+            <DaftarBarangPenting data={dataPenting} radius="10px" onTap={() => setView('stoklist')} />
+          </div>
+        )}
       </div>
 
       {/* Stok opname mingguan */}
@@ -2776,14 +2935,17 @@ function InputNotaView({ bahanBaku, showToast, loadData, logAudit, setView, user
 // =====================================================
 // UPDATE STOK HARIAN (menggantikan Closing lama)
 // =====================================================
-function ClosingView({ bahanBaku, closing, showToast, loadData, logAudit, userName, setUserName, opname, mintaBeli }) {
+function ClosingView({ bahanBaku, closing, showToast, loadData, logAudit, userName, setUserName, opname, mintaBeli, fokusStok, setFokusStok }) {
   const [scope, setScope] = useState(opname?.isToday ? 'semua' : 'harian')
+  // Dibuka dari kartu sapaan Home: langsung cari barang tertentu, atau hanya barang penting yang belum diisi
+  const [hanyaPenting, setHanyaPenting] = useState(!!fokusStok?.hanyaPenting)
+  useEffect(() => { if (fokusStok && setFokusStok) setFokusStok(null) }, [])   // sekali pakai
   const [wastePrompt, setWastePrompt] = useState(null)   // { b, aktual, sebelum }
   const [wasteQty, setWasteQty] = useState('')
   const [wasteAlasan, setWasteAlasan] = useState(ALASAN_WASTE[0])
-  const nHarian = bahanBaku.filter(b => b.is_active && b.frekuensi_hitung === 'harian').length
+  const nHarian = bahanBaku.filter(b => b.is_active && hitungHarian(b)).length
   const nSemua = bahanBaku.filter(b => b.is_active).length
-  const [search, setSearch] = useState('')
+  const [search, setSearch] = useState(fokusStok?.cari || '')
   const [filterDiv, setFilterDiv] = useState('all')
   const [filterKat, setFilterKat] = useState('all')
   const [showHistory, setShowHistory] = useState(false)
@@ -2806,9 +2968,11 @@ function ClosingView({ bahanBaku, closing, showToast, loadData, logAudit, userNa
     const divOk = filterDiv === 'all' || b.divisi === filterDiv || b.divisi === 'Both'
     const katOk = filterKat === 'all' || b.kategori === filterKat
     const searchOk = !search.trim() || b.nama.toLowerCase().includes(search.toLowerCase())
-    const frekOk = scope === 'semua' || b.frekuensi_hitung === 'harian'
-    return divOk && katOk && searchOk && frekOk
+    const frekOk = scope === 'semua' || hitungHarian(b)
+    const pentingOk = !hanyaPenting || !!b.prioritas
+    return divOk && katOk && searchOk && frekOk && pentingOk
   })
+  const nPenting = bahanBaku.filter(b => b.is_active && b.prioritas).length
 
   const belumUpdateHariIni = filtered.filter(b => {
     const last = lastUpdateMap[b.id]
@@ -2816,7 +2980,7 @@ function ClosingView({ bahanBaku, closing, showToast, loadData, logAudit, userNa
   })
 
   // Kalau filter "belum update" aktif
-  const [onlyPending, setOnlyPending] = useState(false)
+  const [onlyPending, setOnlyPending] = useState(!!fokusStok?.hanyaBelum)
   const displayList = onlyPending ? belumUpdateHariIni : filtered
 
   const handleSave = async (b, wasteInfo) => {
@@ -3005,6 +3169,12 @@ function ClosingView({ bahanBaku, closing, showToast, loadData, logAudit, userNa
             color: filterDiv === k ? '#fff' : C.text2, fontWeight: filterDiv === k ? 600 : 400,
           }}>{l}</button>
         ))}
+        {nPenting > 0 && (
+          <button onClick={() => setHanyaPenting(v => !v)} style={{
+            padding: '5px 10px', fontSize: '11px', borderRadius: '99px', border: `1px solid ${hanyaPenting ? C.red : C.redBorder}`, cursor: 'pointer',
+            background: hanyaPenting ? C.red : C.redBg, color: hanyaPenting ? '#fff' : C.red, fontWeight: 600,
+          }}>⭐ Penting ({nPenting})</button>
+        )}
       </div>
 
       <div style={{ display: 'flex', gap: '5px', marginBottom: '14px', flexWrap: 'wrap' }}>
@@ -3441,9 +3611,22 @@ function StokListView({ bahanBaku, showToast, loadData, logAudit, userName, role
   const [filterFrek, setFilterFrek] = useState('all')
   const toggleFrek = async (b) => {
     const next = b.frekuensi_hitung === 'harian' ? 'mingguan' : 'harian'
+    if (next === 'mingguan' && b.prioritas) { showToast('⭐ Barang penting selalu dihitung tiap hari. Lepas tanda Fast/Crucial dulu kalau mau diubah.'); return }
     const { error } = await supabase.from('bahan_baku').update({ frekuensi_hitung: next }).eq('id', b.id)
     if (error) { showToast('❌ ' + error.message); return }
     showToast(`${b.nama} → ${next === 'harian' ? 'dihitung tiap hari' : 'hanya saat opname'}`)
+    loadData()
+  }
+  // Tanda barang penting (owner): tap Fast / Crucial untuk menandai, tap lagi untuk melepas.
+  // Barang yang ditandai otomatis dihitung tiap hari dan muncul di kartu sapaan Home staff.
+  const togglePrioritas = async (b, jenis) => {
+    if (!isOwner) { showToast('Hanya owner yang bisa menandai barang penting'); return }
+    const next = b.prioritas === jenis ? null : jenis
+    const patch = next ? { prioritas: next, frekuensi_hitung: 'harian' } : { prioritas: null }
+    const { error } = await supabase.from('bahan_baku').update(patch).eq('id', b.id)
+    if (error) { showToast('❌ ' + error.message); return }
+    if (logAudit) await logAudit('bahan_baku', b.id, 'tandai_penting', b.id, b.nama, { dari: b.prioritas || null, ke: next })
+    showToast(next ? `⭐ ${b.nama} ditandai ${PRIORITAS_LABEL[next]} · muncul di Home staff` : `${b.nama} bukan barang penting lagi`)
     loadData()
   }
   const [filterKat, setFilterKat] = useState('all')
@@ -3472,7 +3655,7 @@ function StokListView({ bahanBaku, showToast, loadData, logAudit, userName, role
     if (!b.is_active) return false
     if (onlyNoKode && !perluKode(b)) return false
     const katOk    = filterKat === 'all' || b.kategori === filterKat
-    const frekOk   = filterFrek === 'all' || (b.frekuensi_hitung || 'mingguan') === filterFrek
+    const frekOk   = filterFrek === 'all' || (filterFrek === 'penting' ? !!b.prioritas : (hitungHarian(b) ? 'harian' : 'mingguan') === filterFrek)
     if (!frekOk) return false
     const divOk    = filterDiv === 'all' || b.divisi === filterDiv || b.divisi === 'Both'
     const searchOk = !search.trim() || b.nama.toLowerCase().includes(search.toLowerCase())
@@ -3619,7 +3802,7 @@ function StokListView({ bahanBaku, showToast, loadData, logAudit, userName, role
 
       {/* Filter: frekuensi hitung */}
       <div style={{ display: 'flex', gap: '5px', marginBottom: '12px', marginTop: '-8px', flexWrap: 'wrap' }}>
-        {[['all', 'Semua'], ['harian', `☀️ Harian (${bahanBaku.filter(b => b.is_active && b.frekuensi_hitung === 'harian').length})`], ['mingguan', `📦 Opname saja (${bahanBaku.filter(b => b.is_active && b.frekuensi_hitung !== 'harian').length})`]].map(([k, l]) => (
+        {[['all', 'Semua'], ['penting', `⭐ Penting (${bahanBaku.filter(b => b.is_active && b.prioritas).length})`], ['harian', `☀️ Harian (${bahanBaku.filter(b => b.is_active && hitungHarian(b)).length})`], ['mingguan', `📦 Opname saja (${bahanBaku.filter(b => b.is_active && !hitungHarian(b)).length})`]].map(([k, l]) => (
           <button key={k} onClick={() => setFilterFrek(k)} style={{
             padding: '5px 11px', fontSize: '11px', borderRadius: '99px', border: `1px solid ${C.border}`, cursor: 'pointer',
             background: filterFrek === k ? C.green : 'transparent',
@@ -3687,10 +3870,22 @@ function StokListView({ bahanBaku, showToast, loadData, logAudit, userName, role
               }}>{updTeks}</span>
               <button onClick={() => isOwner ? toggleFrek(b) : showToast('Hanya owner yang bisa mengubah ini')} style={{
                 padding: '3px 8px', fontSize: '10px', borderRadius: '99px', cursor: isOwner ? 'pointer' : 'default',
-                border: `1px solid ${b.frekuensi_hitung === 'harian' ? C.greenLightBorder : C.border}`,
-                background: b.frekuensi_hitung === 'harian' ? C.greenLightBg : C.panel2,
-                color: b.frekuensi_hitung === 'harian' ? C.greenLight : C.text3,
-              }}>{b.frekuensi_hitung === 'harian' ? '☀️ hitung tiap hari' : '📦 hanya saat opname'}{isOwner ? ' · ubah' : ''}</button>
+                border: `1px solid ${hitungHarian(b) ? C.greenLightBorder : C.border}`,
+                background: hitungHarian(b) ? C.greenLightBg : C.panel2,
+                color: hitungHarian(b) ? C.greenLight : C.text3,
+              }}>{hitungHarian(b) ? '☀️ hitung tiap hari' : '📦 hanya saat opname'}{isOwner ? ' · ubah' : ''}</button>
+              {/* Tanda barang penting: owner bisa tap untuk ubah; staff hanya melihat tandanya */}
+              {(isOwner || b.prioritas) && ['fast', 'crucial'].filter(j => isOwner || b.prioritas === j).map(j => {
+                const aktif = b.prioritas === j
+                return (
+                  <button key={j} onClick={() => togglePrioritas(b, j)} style={{
+                    padding: '3px 8px', fontSize: '10px', fontWeight: 700, borderRadius: '99px', cursor: isOwner ? 'pointer' : 'default', minHeight: '24px',
+                    border: `1px solid ${aktif ? (j === 'fast' ? C.greenBorder : C.redBorder) : C.border}`,
+                    background: aktif ? (j === 'fast' ? C.greenBg : C.redBg) : C.panel,
+                    color: aktif ? (j === 'fast' ? C.green : C.red) : C.text3,
+                  }}>{aktif ? '⭐ ' : ''}{j === 'fast' ? 'Fast moving' : 'Crucial'}</button>
+                )
+              })}
             </div>
 
             {/* Baris 3 (owner saja): kaitan ke Accurate */}
