@@ -9,6 +9,7 @@ import { BarangMasukView, notaPerluDicek } from './BarangMasuk'
 import { semuaFoto } from './Kasir'
 import { PengeluaranKasirView, RekapHarianView, TalanganCard } from './Kasir'
 import { PenjualanView } from './TutupKasir'
+import { ChecklistView, useRingkasChecklist } from './Checklist'
 
 // =====================================================
 // PICCOLO CORNER v3 - Aplikasi Produksi & Inventory
@@ -686,7 +687,7 @@ function Toast({ msg }) {
 // APP SHELL (Header + Tabs + Content)
 // =====================================================
 function AppShell(props) {
-  const { role, userName, view, setView, handleLogout, daysSinceClosing, isLocked, bisaPenjualan } = props
+  const { role, userName, view, setView, handleLogout, daysSinceClosing, isLocked, bisaPenjualan, currentUser } = props
   const [moreOpen, setMoreOpen] = useState(false)
 
   // Semua menu: id → [label, ikon]
@@ -696,10 +697,14 @@ function AppShell(props) {
     closing: ['Update Stok', 'clipboard'], stoklist: ['Daftar Stok', 'box'], waste: ['Waste', 'trash'],
     historybelanja: ['Riwayat Belanja', 'cart'], resep: ['Resep', 'book'], dashboard: ['Dashboard', 'chart'],
     rekap: ['Rekap Harian', 'calendar'], upload: ['Master', 'upload'], auditlog: ['Audit', 'list'], kelolauser: ['User', 'users'],
-    request: ['Request', 'bag'], panduan: ['Panduan', 'book'], barangmasuk: ['Barang Masuk', 'cart'],
+    request: ['Request', 'bag'], panduan: ['Panduan', 'book'], barangmasuk: ['Barang Masuk', 'cart'], checklist: ['Checklist', 'check'],
   }
+  const staffKitchen = role !== 'owner' && isStaffKitchen(currentUser)
   const allMenus = role === 'owner'
-    ? ['home', 'penjualan', 'inputnota', 'rekap', 'request', 'dashboard', 'stoklist', 'histproduksi', 'historybelanja', 'barangmasuk', 'pengeluaran', 'resep', 'upload', 'auditlog', 'kelolauser', 'panduan']
+    ? ['home', 'penjualan', 'inputnota', 'rekap', 'request', 'dashboard', 'stoklist', 'histproduksi', 'historybelanja', 'barangmasuk', 'pengeluaran', 'checklist', 'resep', 'upload', 'auditlog', 'kelolauser', 'panduan']
+    // Staff Kitchen: Checklist harian di menu bawah (dipakai sepanjang hari); Request pindah ke "Lainnya".
+    : staffKitchen
+    ? ['home', 'checklist', 'closing', 'produksi', 'request', 'stoklist', 'barangmasuk', ...(bisaPenjualan ? ['penjualan', 'pengeluaran'] : []), 'inputnota', 'waste', 'resep', 'panduan']
     // Staff: Home · Update Stok · Produksi · Request di menu bawah; sisanya (termasuk Daftar Stok) di "Lainnya".
     // Update Stok juga bisa dibuka dari tombol di Home. Riwayat belanja tidak dipakai staff.
     // Kas Keluar hanya untuk staff yang ditunjuk jadi kasir (bisa tutup kasir). Riwayat belanja staff tanpa harga.
@@ -751,6 +756,7 @@ function AppShell(props) {
       {/* Isi halaman; ruang bawah = tinggi menu bawah (70px + safe-area) + sedikit jeda, supaya tidak ada area kosong di atas menu */}
       <div style={{ padding: '18px 18px calc(78px + env(safe-area-inset-bottom, 0px))' }}>
         {view === 'home' && <HomeView {...props} />}
+        {view === 'checklist' && <ChecklistView {...props} />}
         {view === 'produksi' && <ProduksiView {...props} />}
         {view === 'histproduksi' && <HistoryProduksiView {...props} />}
         {view === 'inputnota' && <InputNotaView {...props} />}
@@ -814,6 +820,9 @@ function AppShell(props) {
     </div>
   )
 }
+
+// Checklist Harian Kitchen: untuk staff divisi Kitchen (atau All)
+const isStaffKitchen = (u) => u?.divisi === 'Kitchen' || u?.divisi === 'All'
 
 function HomeView(props) {
   const { role, bahanBaku, produksi, belanja, closing, daysSinceClosing, setView, userName } = props
@@ -915,6 +924,7 @@ function StaffHome({ bahanBaku, produksi, belanja, closing, penjualan, requests 
   const dataPenting = hitungBarangPenting(bahanBaku, closing, divisiStaff)
   const { penting, pentingBelum } = dataPenting
   const namaDepan = (userName || 'Kak').trim().split(/\s+/)[0]
+  const ringkasChecklist = useRingkasChecklist('kitchen', currentUser?.id, isStaffKitchen(currentUser))
 
   // Aktivitas hari ini untuk feed — gabung produksi + belanja + closing, urutkan terbaru
   const activities = [
@@ -1048,6 +1058,29 @@ function StaffHome({ bahanBaku, produksi, belanja, closing, penjualan, requests 
               <div style={{ fontSize: '12px', color: C.text2, marginTop: '12px', lineHeight: 1.45 }}>Barang harian lainnya masih <strong>{totalBahan - updatedToday.size} dari {totalBahan}</strong> yang belum. Kalau sempat, lanjutkan ya.</div>
             )}
           </div>
+        )
+      })()}
+
+      {/* Checklist Harian Kitchen (staff Kitchen) */}
+      {isStaffKitchen(currentUser) && (() => {
+        const r = ringkasChecklist
+        const beres = r && r.total > 0 && r.selesai === r.total
+        return (
+          <button onClick={() => { setView('checklist'); window.scrollTo({ top: 0 }) }} style={{
+            font: 'inherit', width: '100%', textAlign: 'left', cursor: 'pointer', marginBottom: '12px', padding: '16px', borderRadius: '14px',
+            background: C.panel, border: `2px solid ${beres ? '#8FD3A4' : r?.merah ? C.redBorder : C.greenBorder}`, color: C.text,
+          }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+              <Icon name="check" size={30} style={{ color: beres ? '#1E7B3A' : C.green, flexShrink: 0 }} />
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ fontSize: '17px', fontWeight: 800 }}>Checklist Harian Kitchen</div>
+                <div style={{ fontSize: '14px', fontWeight: 600, marginTop: '2px', color: beres ? '#1E7B3A' : r?.merah ? C.red : C.text2 }}>
+                  {!r ? 'Tap untuk buka' : beres ? `Semua ${r.total} tugas selesai 🎉` : `${r.selesai} dari ${r.total} selesai${r.merah ? ` · ${r.merah} lewat batas jam` : ''}`}
+                </div>
+              </div>
+              <span style={{ fontSize: '20px', color: C.text3 }}>→</span>
+            </div>
+          </button>
         )
       })()}
 
