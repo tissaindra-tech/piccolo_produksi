@@ -1470,7 +1470,7 @@ function OwnerHome(props) {
         <span style={{ fontSize: '11px', color: C.text3 }}>Buka →</span>
       </div>
 
-      <TalanganCard showToast={props.showToast} />
+      <TalanganCard showToast={props.showToast} logAudit={props.logAudit} />
 
       <DriveCard settings={props.settings} saveSetting={saveSetting} showToast={props.showToast} menunggu={belanja.filter(b => b.status_baca === 'menunggu').length} />
 
@@ -5990,7 +5990,7 @@ function AuditLogView({ auditLog }) {
       <p style={{ fontSize: '12px', color: C.text3, marginBottom: '14px' }}>History semua aktivitas · {auditLog.length} entries</p>
 
       {auditLog.map(a => (
-        <div key={a.id} style={{ background: C.panel2, padding: '10px 12px', borderRadius: '7px', marginBottom: '6px', fontSize: '12px' }}>
+        <div key={a.id} style={{ background: C.panel2, padding: '10px 12px', borderRadius: '7px', marginBottom: '6px', fontSize: '12px', overflowWrap: 'anywhere' }}>
           <div style={{ fontWeight: 500 }}>
             <strong>{a.yang_melakukan}</strong> · {a.aksi} {a.tabel} {a.bahan_nama && `→ ${a.bahan_nama}`}
           </div>

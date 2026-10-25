@@ -58,7 +58,7 @@ function BarisUang({ rows, setRows, denganSumber = false, placeholder }) {
   )
 }
 
-export function PenjualanView({ showToast, userName, setUserName, loadData, role }) {
+export function PenjualanView({ showToast, userName, setUserName, loadData, role, logAudit }) {
   const isOwner = role === 'owner'
   const [tab, setTab] = useState('input')
   const [tanggal, setTanggal] = useState(formatTanggal())
@@ -175,12 +175,15 @@ export function PenjualanView({ showToast, userName, setUserName, loadData, role
       // 1. pengeluaran yang diketik di laporan → catatan kas keluar (kategori diisi Claude pada tugas pagi)
       const baru = [...barisKasValid.map(r => ({ ...r, sumber: 'kas_kasir' })), ...barisLainValid]
       for (const r of baru) {
+        const idKeluar = generateId()
         const { error } = await supabase.from('pengeluaran_kasir').insert({
-          id: generateId(), tanggal, jumlah: num(r.jumlah), keperluan: r.keperluan.trim(), kategori: null, sumber_dana: r.sumber,
+          id: idKeluar, tanggal, jumlah: num(r.jumlah), keperluan: r.keperluan.trim(), kategori: null, sumber_dana: r.sumber,
           dibayar_oleh: r.sumber === 'talangan' ? (r.dibayar_oleh || '').trim() : null, status_ganti: r.sumber === 'talangan' ? 'belum' : null,
           ada_nota: false, disetujui_oleh: isOwner ? yangInput : null, cara_persetujuan: 'Laporan kasir', yang_input: yangInput, status_baca: 'menunggu',
         })
         if (error) throw error
+        logAudit?.('pengeluaran_kasir', idKeluar, 'catat_kas_keluar', null, r.keperluan.trim(),
+          { jumlah: num(r.jumlah), sumber_dana: r.sumber, dibayar_oleh: r.sumber === 'talangan' ? (r.dibayar_oleh || '').trim() : null, tanggal, lewat: 'Tutup Kasir' })
       }
       // 2. foto
       let fotoUrl = isOwner ? (existing?.foto || '') : ''
@@ -196,6 +199,9 @@ export function PenjualanView({ showToast, userName, setUserName, loadData, role
       }
       const { error } = await supabase.from('penjualan_harian').upsert(row, { onConflict: 'tanggal' })
       if (error) throw error
+      logAudit?.('penjualan_harian', row.id, existing ? 'ubah_tutup_kasir' : 'tutup_kasir', null, `Laporan ${formatTanggalID(tanggal)}`,
+        { omzet: totalOmzet, kas_awal: num(kasAwal), kas_akhir: kasAkhir, pengeluaran_kas: pengeluaranKas, kas_fisik: kasFisik === '' ? null : num(kasFisik),
+          ...(existing ? { sebelumnya: { omzet: num(existing.total_omzet), kas_akhir: existing.kas_akhir, kas_fisik: existing.kas_fisik } } : {}) })
       const teks = teksLaporan()
       showToast(`✅ Laporan ${formatTanggalID(tanggal)} tersimpan`)
       setJustSaved({ tanggal, total: totalOmzet, kasAkhir, teks })

@@ -138,7 +138,7 @@ export function DatePicker({ value, onChange }) {
 // =====================================================
 // 2. PENGELUARAN KAS KASIR
 // =====================================================
-export function PengeluaranKasirView({ showToast, userName, setUserName, loadData, role }) {
+export function PengeluaranKasirView({ showToast, userName, setUserName, loadData, role, logAudit }) {
   const isOwner = role === 'owner'
   const [tab, setTab] = useState('catat')
   const [tanggal, setTanggal] = useState(formatTanggal())
@@ -206,6 +206,8 @@ export function PengeluaranKasirView({ showToast, userName, setUserName, loadDat
           pemegang: 'staff', catatan: `Pengeluaran kasir: ${keperluan.trim()}`, yang_input: yangInput,
         })
       }
+      logAudit?.('pengeluaran_kasir', id, 'catat_kas_keluar', null, keperluan.trim(),
+        { jumlah: num(jumlah), sumber_dana: sumber, dibayar_oleh: sumber === 'talangan' ? dibayarOleh.trim() : null, disetujui_oleh: disetujui.trim(), tanggal })
       showToast(`✅ Pengeluaran ${formatRupiah(num(jumlah))} tercatat`)
       reset(); await loadList(); loadData && loadData()
       setTab('riwayat')
@@ -627,7 +629,7 @@ export function RekapHarianView({ bahanBaku, showToast, setView, role, bukaNota 
 // =====================================================
 // 4. TALANGAN (Owner) — uang pribadi yang dipakai dulu untuk toko, belum diganti
 // =====================================================
-export function TalanganCard({ showToast }) {
+export function TalanganCard({ showToast, logAudit }) {
   const [rows, setRows] = useState([])
   const [open, setOpen] = useState(false)
   const load = async () => {
@@ -644,6 +646,7 @@ export function TalanganCard({ showToast }) {
   const tandaiGanti = async (r) => {
     const { error } = await supabase.from(r.tabel).update({ status_ganti: 'sudah', tanggal_ganti: formatTanggal(), jumlah_diganti: r.total }).eq('id', r.id)
     if (error) { showToast('❌ ' + error.message); return }
+    logAudit?.(r.tabel, r.id, 'tandai_talangan_diganti', null, `${r.oleh} · ${r.ket}`, { jumlah: r.jumlah, tanggal: r.tanggal })
     showToast(`✅ ${formatRupiah(r.jumlah)} ke ${r.oleh} ditandai sudah diganti`)
     load()
   }
