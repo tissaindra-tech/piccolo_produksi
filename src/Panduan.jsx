@@ -1,7 +1,7 @@
 // Panduan di dalam aplikasi: kartu skenario per peran (bukan per menu), supaya staff baru
 // belajar dari situasi nyata: "stok hampir habis", "belanja ke Lotte", "masak satu batch", dst.
 import { useState } from 'react'
-import { C, S } from './shared'
+import { C, S, keAtas } from './shared'
 
 const ATURAN_WAJIB = [
   ['⚖️', 'Jumlah selalu dalam satuan terkecil: gram, ml, atau pcs. Beli 2 botol × 1000 ml, tulis 2000.'],
@@ -205,7 +205,7 @@ export function PanduanView({ role, setView, bisaPenjualan }) {
                 </ol>
                 {k.catatan && <div style={{ fontSize: '11.5px', color: C.text2, background: C.panel2, borderRadius: '8px', padding: '7px 10px', marginTop: '8px' }}>💡 {k.catatan}</div>}
                 {k.view && setView && (
-                  <button onClick={() => { setView(k.view); window.scrollTo({ top: 0 }) }} style={{ ...S.btn, ...S.btnPrimary, marginTop: '10px', padding: '8px 12px', fontSize: '12px' }}>{k.tombol} →</button>
+                  <button onClick={() => { setView(k.view); keAtas() }} style={{ ...S.btn, ...S.btnPrimary, marginTop: '10px', padding: '8px 12px', fontSize: '12px' }}>{k.tombol} →</button>
                 )}
               </div>
             )}

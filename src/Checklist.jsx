@@ -6,7 +6,7 @@
 // =====================================================
 import { useState, useEffect, useRef } from 'react'
 import { supabase } from './supabase'
-import { C, S, uploadFotoToStorage } from './shared'
+import { C, S, uploadFotoToStorage, keAtas } from './shared'
 
 const HARI_KEY = ['minggu', 'senin', 'selasa', 'rabu', 'kamis', 'jumat', 'sabtu']
 const HARI_NAMA = { minggu: 'Minggu', senin: 'Senin', selasa: 'Selasa', rabu: 'Rabu', kamis: 'Kamis', jumat: 'Jumat', sabtu: 'Sabtu' }
@@ -296,10 +296,10 @@ function KartuItem({ item, waktu, konten, userName, ubah, showToast, setView, bu
         <button onClick={bukaTamu} style={{ ...S.btn, ...S.btnSecondary, width: '100%', minHeight: '48px', fontSize: '15px', marginTop: '10px', background: C.panel }}>🍽️ Pilih dari daftar "Saat Tidak Ada Tamu"</button>
       )}
       {t.lampiran === 'update_stok' && !sudah && (
-        <button onClick={() => { setView('closing'); window.scrollTo({ top: 0 }) }} style={{ ...S.btn, ...S.btnSecondary, width: '100%', minHeight: '48px', fontSize: '15px', marginTop: '10px', background: C.panel }}>📋 Buka menu Update Stok</button>
+        <button onClick={() => { setView('closing'); keAtas() }} style={{ ...S.btn, ...S.btnSecondary, width: '100%', minHeight: '48px', fontSize: '15px', marginTop: '10px', background: C.panel }}>📋 Buka menu Update Stok</button>
       )}
       {t.lampiran === 'produksi' && !sudah && (
-        <button onClick={() => { setView('produksi'); window.scrollTo({ top: 0 }) }} style={{ ...S.btn, ...S.btnSecondary, width: '100%', minHeight: '48px', fontSize: '15px', marginTop: '10px', background: C.panel }}>🍳 Buka menu Produksi</button>
+        <button onClick={() => { setView('produksi'); keAtas() }} style={{ ...S.btn, ...S.btnSecondary, width: '100%', minHeight: '48px', fontSize: '15px', marginTop: '10px', background: C.panel }}>🍳 Buka menu Produksi</button>
       )}
 
       {/* Foto */}

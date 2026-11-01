@@ -92,6 +92,9 @@ export async function compressImage(file, maxWidth = 1200, quality = 0.75) {
 // folder: 'produksi' | 'belanja' | 'waste' | 'penjualan' | 'pengeluaran'
 // Pengaturan Google Drive (Apps Script milik owner). Diisi dari app_settings id 'drive'.
 export const driveCtx = { url: '', user: '' }
+// Gulir ke atas saat pindah halaman. Yang di-scroll adalah #root (lihat index.html), bukan jendela.
+export const keAtas = () => { document.getElementById('root')?.scrollTo({ top: 0 }); window.scrollTo(0, 0) }
+
 export const setDriveContext = (url, user) => { driveCtx.url = url || ''; driveCtx.user = user || '' }
 
 const fileToDataUrl = (file) => new Promise((res, rej) => { const r = new FileReader(); r.onload = e => res(e.target.result); r.onerror = rej; r.readAsDataURL(file) })
