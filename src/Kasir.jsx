@@ -21,6 +21,26 @@ const METODE = [
 ]
 
 export const num = (v) => Number(v) || 0
+
+// Hitung ulang "pengeluaran kas" dan "kas akhir" laporan Tutup Kasir tanggal itu, dengan rumus yang sama
+// seperti form Tutup Kasir: semua kas keluar + bagian nota belanja yang keluar dari kas kasir.
+// Dipakai setelah owner mengubah/menghapus catatan kas keluar. Kalau laporan tanggal itu belum ada, tidak ada yang diubah.
+export async function hitungUlangKasLaporan(tanggal) {
+  const { data: pj } = await supabase.from('penjualan_harian').select('id, kas_awal, tunai, pengeluaran_kas, kas_akhir').eq('tanggal', tanggal).maybeSingle()
+  if (!pj) return null
+  const [pk, bl] = await Promise.all([
+    supabase.from('pengeluaran_kasir').select('jumlah, sumber_dana, dipindah_ke_belanja').eq('tanggal', tanggal),
+    supabase.from('belanja').select('total_harga, sumber_dana, sumber_dana_2, jumlah_sumber_2').eq('tanggal', tanggal),
+  ])
+  const keluar = (pk.data || []).filter(p => !p.dipindah_ke_belanja).reduce((s, p) => s + bagianSumber(p, 'kas_kasir'), 0)
+    + (bl.data || []).reduce((s, b) => s + bagianSumber(b, 'kas_kasir'), 0)
+  const kasAkhir = num(pj.kas_awal) + num(pj.tunai) - keluar
+  if (keluar !== num(pj.pengeluaran_kas) || kasAkhir !== num(pj.kas_akhir)) {
+    const { error } = await supabase.from('penjualan_harian').update({ pengeluaran_kas: keluar, kas_akhir: kasAkhir, updated_at: new Date().toISOString() }).eq('id', pj.id)
+    if (error) throw error
+  }
+  return { pengeluaran_kas: keluar, kas_akhir: kasAkhir }
+}
 const shiftDate = (ymd, days) => { const d = new Date(ymd); d.setDate(d.getDate() + days); return formatTanggal(d) }
 export const bulanIni = (ymd) => ymd.slice(0, 7)
 
@@ -156,6 +176,8 @@ export function PengeluaranKasirView({ showToast, userName, setUserName, loadDat
   const [list, setList] = useState([])
   const [saving, setSaving] = useState(false)
   const [fotoModal, setFotoModal] = useState(null)
+  const [edit, setEdit] = useState(null)       // owner: catatan yang sedang diubah { ...baris, jumlah: string }
+  const [editSaving, setEditSaving] = useState(false)
 
   const loadList = async () => {
     const [pk, bl] = await Promise.all([
@@ -213,6 +235,74 @@ export function PengeluaranKasirView({ showToast, userName, setUserName, loadDat
       setTab('riwayat')
     } catch (e) { showToast('❌ ' + e.message) }
     setSaving(false)
+  }
+
+  // ---- Owner: ubah / hapus catatan kas keluar yang salah input ----
+  const bukaEdit = (p) => setEdit({ ...p, jumlah: String(num(p.jumlah)), dibayar_oleh: p.dibayar_oleh || '', kategori: p.kategori || '' })
+
+  // Kalau sumbernya petty cash, buku petty cash ikut dibetulkan lewat baris koreksi (tidak mengubah baris lama)
+  const koreksiPettyCash = async (tanggal, selisih, ket) => {
+    if (!selisih) return
+    await supabase.from('petty_cash').insert({
+      id: generateId(), tanggal, jenis: 'pengeluaran', jumlah: selisih, saldo_setelah: 0,
+      pemegang: 'staff', catatan: `Koreksi pengeluaran kasir: ${ket}`, yang_input: userName,
+    })
+  }
+
+  const teksLaporanUlang = (hasil, tgl) => hasil ? ` Laporan ${formatTanggalID(tgl)} dihitung ulang: kas akhir ${formatRupiah(hasil.kas_akhir)}.` : ''
+
+  const simpanEdit = async () => {
+    if (!edit) return
+    const lama = list.find(p => p.id === edit.id)
+    if (!lama) { showToast('❌ Catatan tidak ditemukan'); return }
+    if (!num(edit.jumlah)) { showToast('❌ Isi jumlah'); return }
+    if (!edit.keperluan.trim()) { showToast('❌ Isi untuk apa uangnya'); return }
+    if (edit.sumber_dana === 'talangan' && !edit.dibayar_oleh.trim()) { showToast('❌ Isi siapa yang menalangi'); return }
+    setEditSaving(true)
+    try {
+      const talangan = edit.sumber_dana === 'talangan'
+      const baru = {
+        tanggal: edit.tanggal, jumlah: num(edit.jumlah), keperluan: edit.keperluan.trim(), sumber_dana: edit.sumber_dana,
+        dibayar_oleh: talangan ? edit.dibayar_oleh.trim() : null,
+        status_ganti: talangan ? (lama.sumber_dana === 'talangan' && lama.status_ganti ? lama.status_ganti : 'belum') : null,
+        kategori: edit.kategori || null,
+      }
+      const { error } = await supabase.from('pengeluaran_kasir').update(baru).eq('id', edit.id)
+      if (error) throw error
+      // Petty cash: hitung selisih antara yang dulu dicatat (−jumlah lama bila petty) dan yang sekarang
+      const pettyLama = lama.sumber_dana === 'petty_cash' ? -num(lama.jumlah) : 0
+      const pettyBaru = baru.sumber_dana === 'petty_cash' ? -baru.jumlah : 0
+      await koreksiPettyCash(baru.tanggal, pettyBaru - pettyLama, baru.keperluan)
+      // Laporan Tutup Kasir tanggal lama dan (kalau tanggal diganti) tanggal baru
+      const hasil = await hitungUlangKasLaporan(baru.tanggal)
+      if (lama.tanggal !== baru.tanggal) await hitungUlangKasLaporan(lama.tanggal)
+      logAudit?.('pengeluaran_kasir', edit.id, 'edit_kas_keluar', null, baru.keperluan, {
+        sebelum: { tanggal: lama.tanggal, jumlah: num(lama.jumlah), keperluan: lama.keperluan, sumber_dana: lama.sumber_dana, dibayar_oleh: lama.dibayar_oleh, kategori: lama.kategori },
+        sesudah: baru,
+      })
+      showToast(`✅ Catatan diubah.${teksLaporanUlang(hasil, baru.tanggal)}`)
+      setEdit(null); await loadList(); loadData && loadData()
+    } catch (e) { showToast('❌ ' + e.message) }
+    setEditSaving(false)
+  }
+
+  const hapusEdit = async () => {
+    if (!edit) return
+    const lama = list.find(p => p.id === edit.id)
+    if (!lama) { showToast('❌ Catatan tidak ditemukan'); return }
+    if (!window.confirm(`Hapus catatan "${lama.keperluan}" ${formatRupiah(lama.jumlah)}?\nCatatan ini hilang dari riwayat dan laporan kas tanggal itu dihitung ulang.`)) return
+    setEditSaving(true)
+    try {
+      const { error } = await supabase.from('pengeluaran_kasir').delete().eq('id', edit.id)
+      if (error) throw error
+      if (lama.sumber_dana === 'petty_cash') await koreksiPettyCash(lama.tanggal, num(lama.jumlah), `${lama.keperluan} (dihapus)`)
+      const hasil = await hitungUlangKasLaporan(lama.tanggal)
+      logAudit?.('pengeluaran_kasir', edit.id, 'hapus_kas_keluar', null, lama.keperluan,
+        { tanggal: lama.tanggal, jumlah: num(lama.jumlah), sumber_dana: lama.sumber_dana, dibayar_oleh: lama.dibayar_oleh })
+      showToast(`🗑️ Catatan dihapus.${teksLaporanUlang(hasil, lama.tanggal)}`)
+      setEdit(null); await loadList(); loadData && loadData()
+    } catch (e) { showToast('❌ ' + e.message) }
+    setEditSaving(false)
   }
 
   const bulan = bulanIni(formatTanggal())
@@ -328,11 +418,57 @@ export function PengeluaranKasirView({ showToast, userName, setUserName, loadDat
                 </div>
                 <div style={{ textAlign: 'right' }}>
                   <div style={{ fontSize: '14px', fontWeight: 700, color: C.red }}>{formatRupiah(p.jumlah)}</div>
+                  {isOwner && !p._belanja && !p.dipindah_ke_belanja && (
+                    <button onClick={() => bukaEdit(p)} aria-label="Ubah catatan" style={{ ...S.btn, ...S.btnSecondary, padding: '3px 8px', fontSize: '10px', marginTop: '4px' }}>✏️ Ubah</button>
+                  )}
                   {semuaFoto(p.foto, p.foto_tambahan).map((u, i, arr) => <button key={u} onClick={() => setFotoModal(u)} style={{ ...S.btn, ...S.btnSecondary, padding: '3px 8px', fontSize: '10px', marginTop: '4px', marginLeft: i ? '4px' : 0 }}>📷{arr.length > 1 ? ` ${i + 1}` : ' Foto'}</button>)}
                 </div>
               </div>
             </div>
           ))}
+        </div>
+      )}
+
+      {edit && (
+        <div onClick={() => !editSaving && setEdit(null)} style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', zIndex: 1000, display: 'flex', alignItems: 'flex-end', justifyContent: 'center' }}>
+          <div onClick={e => e.stopPropagation()} style={{ background: C.panel, borderRadius: '16px 16px 0 0', padding: '18px 16px calc(16px + env(safe-area-inset-bottom, 0px))', width: '100%', maxWidth: '520px', maxHeight: '90vh', overflowY: 'auto' }}>
+            <div style={{ fontSize: '15px', fontWeight: 700, marginBottom: '2px' }}>✏️ Ubah catatan kas keluar</div>
+            <div style={{ fontSize: '11px', color: C.text3, marginBottom: '12px' }}>Diinput {edit.yang_input}{edit.cara_persetujuan ? ` · ${edit.cara_persetujuan}` : ''}. Setelah disimpan, laporan Tutup Kasir tanggal itu dihitung ulang otomatis.</div>
+            <FormRow label="Tanggal">
+              <input type="date" value={edit.tanggal} max={formatTanggal()} onChange={e => setEdit({ ...edit, tanggal: e.target.value })} style={S.input} />
+            </FormRow>
+            <FormRow label="Jumlah (Rp) *">
+              <RupiahInput value={edit.jumlah} onChange={v => setEdit({ ...edit, jumlah: v })} />
+            </FormRow>
+            <FormRow label="Untuk apa? *">
+              <input value={edit.keperluan} onChange={e => setEdit({ ...edit, keperluan: e.target.value })} style={S.input} />
+            </FormRow>
+            <FormRow label="Sumber uang" hint="Salah pilih kas kasir padahal uang pribadi? Ganti ke “Ditalangi dulu” supaya kas kasir benar dan utangnya tercatat.">
+              <select value={edit.sumber_dana} onChange={e => setEdit({ ...edit, sumber_dana: e.target.value })} style={S.input}>
+                <option value="kas_kasir">🏪 Kas kasir</option>
+                <option value="petty_cash">💵 Petty cash</option>
+                <option value="transfer_toko">🏦 Transfer rekening toko</option>
+                <option value="qris_toko">📱 QRIS toko</option>
+                <option value="talangan">🙋 Ditalangi dulu</option>
+              </select>
+            </FormRow>
+            {edit.sumber_dana === 'talangan' && (
+              <FormRow label="Siapa yang bayar dulu? *">
+                <input value={edit.dibayar_oleh} onChange={e => setEdit({ ...edit, dibayar_oleh: e.target.value })} placeholder="nama" style={S.input} />
+              </FormRow>
+            )}
+            <FormRow label="Kategori">
+              <select value={edit.kategori} onChange={e => setEdit({ ...edit, kategori: e.target.value })} style={S.input}>
+                <option value="">Belum dikategorikan</option>
+                {KATEGORI_BIAYA.map(k => <option key={k} value={k}>{k}</option>)}
+              </select>
+            </FormRow>
+            <div style={{ display: 'flex', gap: '8px', marginTop: '6px' }}>
+              <button onClick={hapusEdit} disabled={editSaving} style={{ ...S.btn, ...S.btnDanger, padding: '12px 14px', fontSize: '13px', opacity: editSaving ? 0.6 : 1 }}>🗑️ Hapus</button>
+              <button onClick={() => setEdit(null)} disabled={editSaving} style={{ ...S.btn, ...S.btnSecondary, padding: '12px 14px', fontSize: '13px' }}>Batal</button>
+              <button onClick={simpanEdit} disabled={editSaving} style={{ ...S.btn, ...S.btnSuccess, flex: 1, padding: '12px', fontSize: '14px', opacity: editSaving ? 0.6 : 1 }}>{editSaving ? 'Menyimpan...' : '✅ Simpan'}</button>
+            </div>
+          </div>
         </div>
       )}
 
