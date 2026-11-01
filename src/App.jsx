@@ -1,7 +1,7 @@
 import { useState, useEffect, useMemo, useRef } from 'react'
 import { supabase, generateId, formatTanggal, formatTanggalID, formatRupiah, daysFromNow } from './supabase'
 import * as XLSX from 'xlsx'
-import { C, S, Icon, RpInput, uploadFotoToStorage, compressImage, salinKeDrive, setDriveContext, KATEGORI_BIAYA, SUMBER_DANA_LABEL, sumberText, KATEGORI_LABEL, dibuatSendiri } from './shared'
+import { C, S, Icon, RpInput, keAtas, uploadFotoToStorage, compressImage, salinKeDrive, setDriveContext, KATEGORI_BIAYA, SUMBER_DANA_LABEL, sumberText, KATEGORI_LABEL, dibuatSendiri } from './shared'
 import { kirimKeDrive } from './nota'
 import { RequestBelanjaView } from './Request'
 import { PanduanView } from './Panduan'
@@ -551,15 +551,15 @@ export default function App() {
     role, userName, setUserName, view, setView, currentUser, bisaPenjualan, opname, saveSetting, settings,
     fokusStok, setFokusStok,
     // Dari kartu sapaan Home: buka Update Stok langsung ke barang tertentu ({ cari }) atau ke daftar barang penting yang belum ({ hanyaPenting, hanyaBelum })
-    bukaUpdateStok: (f) => { setFokusStok(f || null); setView('closing'); window.scrollTo({ top: 0 }) },
+    bukaUpdateStok: (f) => { setFokusStok(f || null); setView('closing'); keAtas() },
     bahanBaku, produksi, belanja, closing, waste, auditLog, penjualan, requests, setRequests, requestDraft, setRequestDraft,
     bukaNotaId, setBukaNotaId,
     // Dari Rekap Harian: tap ✏️ di nota → buka nota itu di Riwayat Belanja (di sana ada Edit & Hapus)
-    bukaNota: (id) => { setBukaNotaId(id); setView('historybelanja'); window.scrollTo({ top: 0 }) },
+    bukaNota: (id) => { setBukaNotaId(id); setView('historybelanja'); keAtas() },
     // Stok rendah: bahan beli → form Request; produksi/prepack → menu Produksi (dibuat sendiri di dapur/bar)
     mintaBeli: (b) => {
-      if (dibuatSendiri(b)) { showToast(`👨‍🍳 ${b.nama} dibuat sendiri, bukan dibeli. Catat di Produksi.`); setView('produksi'); window.scrollTo({ top: 0 }); return }
-      setRequestDraft(b); setView('request'); window.scrollTo({ top: 0 })
+      if (dibuatSendiri(b)) { showToast(`👨‍🍳 ${b.nama} dibuat sendiri, bukan dibeli. Catat di Produksi.`); setView('produksi'); keAtas(); return }
+      setRequestDraft(b); setView('request'); keAtas()
     },
     loadData, showToast, logAudit, lazyLoaded,
     daysSinceClosing, isLocked,
@@ -573,9 +573,9 @@ export default function App() {
       color: C.text2,
       display: 'flex',
       justifyContent: 'center',
-      alignItems: 'flex-start',
+      alignItems: 'stretch',   // kolom aplikasi ikut setinggi layar walau isinya pendek
     }}>
-      <div className="layar-penuh" style={{
+      <div style={{
         width: '100%',
         maxWidth: '520px',
         background: C.bg,
@@ -711,7 +711,7 @@ function AppShell(props) {
     : ['home', 'closing', 'produksi', 'request', 'stoklist', 'barangmasuk', ...(bisaPenjualan ? ['penjualan', 'pengeluaran'] : []), 'inputnota', 'waste', 'resep', 'panduan']
   const primary = allMenus.slice(0, 4)               // 4 ikon di menu bawah + "Lainnya"
   const more = allMenus.slice(4)
-  const go = (id) => { setView(id); setMoreOpen(false); window.scrollTo({ top: 0 }) }
+  const go = (id) => { setView(id); setMoreOpen(false); keAtas() }
   const isMoreActive = more.includes(view)
 
   const NavBtn = ({ id, label, icon, active, onClick }) => (
@@ -1066,7 +1066,7 @@ function StaffHome({ bahanBaku, produksi, belanja, closing, penjualan, requests 
         const r = ringkasChecklist
         const beres = r && r.total > 0 && r.selesai === r.total
         return (
-          <button onClick={() => { setView('checklist'); window.scrollTo({ top: 0 }) }} style={{
+          <button onClick={() => { setView('checklist'); keAtas() }} style={{
             font: 'inherit', width: '100%', textAlign: 'left', cursor: 'pointer', marginBottom: '12px', padding: '16px', borderRadius: '14px',
             background: C.panel, border: `2px solid ${beres ? '#8FD3A4' : r?.merah ? C.redBorder : C.greenBorder}`, color: C.text,
           }}>
