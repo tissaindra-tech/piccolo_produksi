@@ -41,9 +41,15 @@ export const formatTanggalID = (date) => {
   return `${d.getDate()} ${months[d.getMonth()]} ${d.getFullYear()}`
 }
 
+// Rupiah selalu tampil bulat, dibulatkan ke atas (Rp 153,846 → Rp 154), supaya tidak ada koma desimal
+// yang bikin angka terbaca ratusan ribu/jutaan. Hanya untuk tampilan; angka yang disimpan tidak berubah.
 export const formatRupiah = (n) => {
   if (!n && n !== 0) return 'Rp -'
-  return 'Rp ' + Number(n).toLocaleString('id-ID')
+  const x = Number(n)
+  if (!isFinite(x)) return 'Rp -'
+  const bersih = Math.round(Math.abs(x) * 100) / 100   // buang sisa hitungan komputer (mis. 3800.0000001)
+  const bulat = Math.ceil(bersih) * (x < 0 ? -1 : 1)
+  return 'Rp ' + bulat.toLocaleString('id-ID')
 }
 
 // Helper: Selisih hari dari sekarang
