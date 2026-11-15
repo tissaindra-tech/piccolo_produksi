@@ -1574,9 +1574,10 @@ function StatCard({ color, label, value, onClick }) {
 // =====================================================
 // SEARCHABLE SELECT COMPONENT
 // =====================================================
-function SearchableSelect({ options, value, onChange, placeholder, showStock = false }) {
+function SearchableSelect({ options, value, onChange, placeholder, showStock = false, inputStyle, ringkas = false }) {
   const [search, setSearch] = useState('')
   const [open, setOpen] = useState(false)
+  const inputRef = useRef(null)
   const selected = options.find(o => String(o.value) === String(value))
 
   const filtered = search.trim()
@@ -1586,15 +1587,25 @@ function SearchableSelect({ options, value, onChange, placeholder, showStock = f
   const handleSelect = (val) => { onChange(val); setOpen(false); setSearch('') }
   const handleFocus = () => { setOpen(true); setSearch('') }
 
+  // Mode ringkas: nama bahan terpilih tampil sebagai teks (boleh 2 baris kalau panjang). Ketuk = cari/ganti bahan.
+  const tampilTeks = ringkas && selected && !open
+  // Mode ringkas: daftar pilihan menempel ke baris bahan (selebar kartu), bukan ke kolom nama yang sempit
   return (
-    <div style={{ position: 'relative' }}>
+    <div style={{ position: ringkas ? 'static' : 'relative' }}>
+      {tampilTeks && (
+        <div onClick={() => { setOpen(true); setSearch(''); setTimeout(() => inputRef.current?.focus(), 0) }}
+          style={{ fontSize: '14.5px', fontWeight: 500, color: C.text, lineHeight: 1.3, cursor: 'pointer', wordBreak: 'break-word', padding: '4px 0' }}>
+          {selected.label}
+        </div>
+      )}
       <input
+        ref={inputRef}
         value={open ? search : (selected ? selected.label : '')}
         onChange={e => { setSearch(e.target.value); setOpen(true) }}
         onFocus={handleFocus}
         onBlur={() => setTimeout(() => setOpen(false), 180)}
         placeholder={placeholder || 'Ketik untuk cari...'}
-        style={{ ...S.input, cursor: 'pointer' }}
+        style={{ ...S.input, cursor: 'pointer', ...(inputStyle || {}), ...(tampilTeks ? { display: 'none' } : {}) }}
         autoComplete="off"
       />
       {open && (
@@ -1823,22 +1834,29 @@ function ProduksiView({ bahanBaku, produksi, showToast, loadData, logAudit, setV
       )}
 
       <hr style={{ border: 'none', borderTop: `1px solid ${C.panel2}`, margin: '14px 0' }} />
-      <div style={{ fontSize: '12px', color: C.text3, fontWeight: 500, marginBottom: '8px' }}>🥬 Bahan mentah dipakai:</div>
+      <JudulBahan teks="Bahan mentah dipakai" jumlah={bahanList.filter(b => b.bahan_id).length} />
 
+      <div style={KARTU_BAHAN}>
+      <KepalaKartuBahan />
       {bahanList.map((b, idx) => {
         const ba = bahanBaku.find(x => x.id == b.bahan_id)
         const altUnit = ba?.satuan_dasar ? UNIT_ALT[ba.satuan_dasar] : null
         const currentUnit = b.inputUnit || ba?.satuan_dasar || ''
         return (
-          <div key={idx} style={{ marginBottom: '16px' }}>
-            {/* Baris 1: nama bahan selebar layar (nama panjang tidak terpotong). Baris 2: jumlah · satuan · hapus */}
-            <SearchableSelect
-              options={bahanOptions} value={b.bahan_id}
-              onChange={val => updateBahan(idx, 'bahan_id', val)}
-              placeholder="Cari bahan mentah..." showStock={true}
-            />
-            <BarisJumlahSatuan b={b} ba={ba} altUnit={altUnit} currentUnit={currentUnit}
-              onJumlah={v => updateBahan(idx, 'jumlah', v)} onUnit={u => updateBahan(idx, 'inputUnit', u)} onHapus={() => removeBahan(idx)} />
+          <div key={idx} style={itemBahan(idx)}>
+            {/* 1 baris: nama (boleh 2 baris kalau panjang) · jumlah · satuan · hapus */}
+            <div style={barisBahan}>
+              <div style={namaBahanBox}>
+                <SearchableSelect
+                  options={bahanOptions} value={b.bahan_id}
+                  onChange={val => updateBahan(idx, 'bahan_id', val)}
+                  placeholder="Cari bahan..." showStock={true} ringkas
+                  inputStyle={namaBahanStyle()}
+                />
+              </div>
+              <BarisJumlahSatuan b={b} ba={ba} altUnit={altUnit} currentUnit={currentUnit}
+                onJumlah={v => updateBahan(idx, 'jumlah', v)} onUnit={u => updateBahan(idx, 'inputUnit', u)} onHapus={() => removeBahan(idx)} />
+            </div>
             {ba && b.jumlah && altUnit && currentUnit !== ba.satuan_dasar && (
               <div style={{ fontSize: '11px', color: C.text3, marginTop: '4px', paddingLeft: '2px' }}>
                 = {currentUnit === altUnit
@@ -1850,8 +1868,9 @@ function ProduksiView({ bahanBaku, produksi, showToast, loadData, logAudit, setV
           </div>
         )
       })}
+      </div>
 
-      <button onClick={addBahan} style={{ ...S.btn, background: 'transparent', border: `1px dashed ${C.border}`, color: C.text2, width: '100%', marginBottom: '12px' }}>
+      <button onClick={addBahan} style={{ ...S.btn, background: 'transparent', border: `1.5px dashed ${C.border2}`, color: C.green, width: '100%', marginBottom: '12px' }}>
         + Tambah bahan
       </button>
 
@@ -1925,28 +1944,50 @@ function ProduksiView({ bahanBaku, produksi, showToast, loadData, logAudit, setV
   )
 }
 
-// Baris bahan di Produksi: jumlah (lebar) · satuan (sempit, pas isi) · tombol hapus
-function BarisJumlahSatuan({ b, ba, altUnit, currentUnit, onJumlah, onUnit, onHapus }) {
+// Daftar bahan di Produksi: semua bahan dalam 1 kartu, 1 baris per bahan:
+// nama (boleh turun 2 baris kalau panjang) · jumlah · satuan · hapus
+const KARTU_BAHAN = { background: C.panel, border: `1px solid ${C.border}`, borderRadius: '14px', marginBottom: '10px', position: 'relative' }
+const itemBahan = (idx) => ({ position: 'relative', padding: '10px 12px', borderTop: idx === 0 ? 'none' : `1px solid ${C.panel2}` })
+const barisBahan = { display: 'flex', alignItems: 'center', gap: '6px' }
+const namaBahanBox = { flex: 1, minWidth: 0 }
+const namaBahanStyle = () => ({ padding: '8px 10px', fontSize: '14px' })
+
+function JudulBahan({ teks, jumlah }) {
   return (
-    <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) auto 46px', gap: '6px', alignItems: 'stretch', marginTop: '6px' }}>
-      <input type="number" inputMode="decimal" placeholder="Jumlah" value={b.jumlah} onChange={e => onJumlah(e.target.value)} style={{ ...S.input, minWidth: 0 }} />
-      {altUnit ? (
-        <div style={{ display: 'flex', borderRadius: '10px', border: `1.5px solid ${C.border}`, overflow: 'hidden' }}>
-          {[ba.satuan_dasar, altUnit].map(u => (
-            <button key={u} onClick={() => onUnit(u)} style={{
-              padding: '0 12px', minWidth: '52px', fontSize: '13px', border: 'none', cursor: 'pointer', fontFamily: 'inherit',
-              background: currentUnit === u ? C.text : 'transparent',
-              color: currentUnit === u ? C.panel : C.text2, fontWeight: currentUnit === u ? 700 : 500,
-            }}>{u}</button>
-          ))}
-        </div>
-      ) : (
-        <div style={{ display: 'flex', alignItems: 'center', padding: '0 12px', minWidth: '52px', justifyContent: 'center', borderRadius: '10px', background: C.panel2, fontSize: '13px', fontWeight: 600, color: C.text2 }}>
-          {b.satuan || ba?.satuan_dasar || '-'}
-        </div>
-      )}
-      <button onClick={onHapus} aria-label="Hapus bahan" style={{ ...S.btn, ...S.btnDanger, padding: 0 }}>✕</button>
+    <div style={{ fontSize: '12px', color: C.text3, fontWeight: 500, marginBottom: '8px' }}>
+      🥬 {teks}{jumlah > 0 ? ` (${jumlah} bahan)` : ''}
     </div>
+  )
+}
+
+function KepalaKartuBahan() {
+  return (
+    <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '11px', color: C.text3, padding: '8px 12px', background: C.panel2, borderRadius: '13px 13px 0 0' }}>
+      <span>Bahan</span><span style={{ width: '104px' }}>Jumlah</span>
+    </div>
+  )
+}
+
+function BarisJumlahSatuan({ b, ba, altUnit, currentUnit, onJumlah, onUnit, onHapus }) {
+  const satuan = currentUnit || b.satuan || ba?.satuan_dasar || ''
+  return (
+    <>
+      <input type="number" inputMode="decimal" placeholder="0" value={b.jumlah} onChange={e => onJumlah(e.target.value)}
+        style={{ ...S.input, width: '62px', flex: '0 0 62px', padding: '8px 7px', textAlign: 'right', fontSize: '15px' }} />
+      {altUnit ? (
+        // Ada 2 satuan (mis. ml / liter): ketuk untuk ganti
+        <button onClick={() => onUnit(satuan === altUnit ? ba.satuan_dasar : altUnit)} title="Ketuk untuk ganti satuan" style={{
+          flex: '0 0 auto', minWidth: '36px', padding: '6px 2px', border: 'none', background: 'transparent', cursor: 'pointer', fontFamily: 'inherit',
+          fontSize: '13px', color: C.text2, fontWeight: 600, textDecoration: 'underline dotted', textUnderlineOffset: '3px',
+        }}>{satuan} ⇄</button>
+      ) : (
+        <span style={{ flex: '0 0 auto', minWidth: '36px', fontSize: '13px', color: C.text3 }}>{satuan}</span>
+      )}
+      <button onClick={onHapus} aria-label="Hapus bahan" style={{
+        width: '30px', height: '30px', flex: '0 0 30px', borderRadius: '15px', border: 'none', cursor: 'pointer',
+        background: C.redBg, color: C.red, fontSize: '13px', fontFamily: 'inherit',
+      }}>✕</button>
+    </>
   )
 }
 
@@ -2171,24 +2212,30 @@ function HistoryProduksiView({ produksi, bahanBaku, showToast, loadData, logAudi
           <input type="date" value={editTanggal} onChange={e => setEditTanggal(e.target.value)} style={S.input} />
         </FormRow>
 
-        <div style={{ fontSize: '12px', color: C.text3, fontWeight: 500, marginBottom: '8px' }}>🥬 Bahan mentah:</div>
+        <JudulBahan teks="Bahan mentah" jumlah={editBahanList.filter(b => b.bahan_id).length} />
+        <div style={KARTU_BAHAN}>
+        <KepalaKartuBahan />
         {editBahanList.map((b, idx) => {
           const ba = bahanBaku.find(x => x.id == b.bahan_id)
           const altUnit = ba?.satuan_dasar ? UNIT_ALT[ba.satuan_dasar] : null
           const currentUnit = b.inputUnit || ba?.satuan_dasar || ''
           return (
-            <div key={idx} style={{ marginBottom: '8px' }}>
-              <SearchableSelect options={bahanOptions} value={b.bahan_id}
-                onChange={val => updateBahan(idx, 'bahan_id', val)}
-                placeholder="Cari bahan..." showStock={true} />
+            <div key={idx} style={{ ...itemBahan(idx), ...barisBahan }}>
+              <div style={namaBahanBox}>
+                <SearchableSelect options={bahanOptions} value={b.bahan_id}
+                  onChange={val => updateBahan(idx, 'bahan_id', val)}
+                  placeholder="Cari bahan..." showStock={true} ringkas
+                  inputStyle={namaBahanStyle()} />
+              </div>
               <BarisJumlahSatuan b={b} ba={ba} altUnit={altUnit} currentUnit={currentUnit}
                 onJumlah={v => updateBahan(idx, 'jumlah', v)} onUnit={u => updateBahan(idx, 'inputUnit', u)}
                 onHapus={() => setEditBahanList(editBahanList.filter((_, i) => i !== idx))} />
             </div>
           )
         })}
+        </div>
         <button onClick={() => setEditBahanList([...editBahanList, { bahan_id: '', jumlah: '', satuan: '', inputUnit: '' }])}
-          style={{ ...S.btn, background: 'transparent', border: `1px dashed ${C.border}`, color: C.text2, width: '100%', marginBottom: '12px' }}>
+          style={{ ...S.btn, background: 'transparent', border: `1.5px dashed ${C.border2}`, color: C.green, width: '100%', marginBottom: '12px' }}>
           + Tambah bahan
         </button>
 
