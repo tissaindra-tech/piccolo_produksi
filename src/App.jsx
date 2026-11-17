@@ -3013,6 +3013,7 @@ function ClosingView({ bahanBaku, closing, showToast, loadData, logAudit, userNa
   const [wastePrompt, setWastePrompt] = useState(null)   // { b, aktual, sebelum }
   const [wasteQty, setWasteQty] = useState('')
   const [wasteAlasan, setWasteAlasan] = useState(ALASAN_WASTE[0])
+  const [staffQty, setStaffQty] = useState('')   // makan staf: wajib diisi (boleh 0) tiap stok turun
   const nHarian = bahanBaku.filter(b => b.is_active && hitungHarian(b)).length
   const nSemua = bahanBaku.filter(b => b.is_active).length
   const [search, setSearch] = useState(fokusStok?.cari || '')
@@ -3053,7 +3054,7 @@ function ClosingView({ bahanBaku, closing, showToast, loadData, logAudit, userNa
   const [onlyPending, setOnlyPending] = useState(!!fokusStok?.hanyaBelum)
   const displayList = onlyPending ? belumUpdateHariIni : filtered
 
-  const handleSave = async (b, wasteInfo) => {
+  const handleSave = async (b, wasteInfo, staffJumlah = 0) => {
     const val = inputs[b.id]
     const who = names[b.id] || userName
     if (val === undefined || val === '') { showToast('❌ Isi angka stok aktual dulu'); return }
@@ -3064,7 +3065,7 @@ function ClosingView({ bahanBaku, closing, showToast, loadData, logAudit, userNa
 
     // Stok turun → tanya dulu: ada yang dibuang / rusak?
     if (selisih < 0 && wasteInfo === undefined) {
-      setWasteQty(''); setWasteAlasan(ALASAN_WASTE[0])
+      setWasteQty(''); setWasteAlasan(ALASAN_WASTE[0]); setStaffQty('')
       setWastePrompt({ b, aktual, sebelum, who })
       return
     }
@@ -3082,7 +3083,7 @@ function ClosingView({ bahanBaku, closing, showToast, loadData, logAudit, userNa
         yang_closing: who,
         catatan: selisih > 0 ? 'stok naik' : selisih < 0 ? 'koreksi stok' : 'tidak ada perubahan',
         // kolom lama diset 0 supaya tidak null
-        qty_bumbu: 0, qty_terjual: 0, qty_staff: 0,
+        qty_bumbu: 0, qty_terjual: 0, qty_staff: staffJumlah || 0,
         qty_wasted_kadaluarsa: 0, qty_wasted_busuk: wasteInfo?.jumlah || 0,
       })
       await supabase.from('bahan_baku').update({ stok_saat_ini: aktual }).eq('id', b.id)
@@ -3095,7 +3096,7 @@ function ClosingView({ bahanBaku, closing, showToast, loadData, logAudit, userNa
         })
         await logAudit('waste', wid, 'create', b.id, b.nama, { jumlah: wasteInfo.jumlah, alasan: wasteInfo.alasan, dari: 'update_stok' })
       }
-      await logAudit('closing_stok', b.id, 'update_stok', sebelum, aktual, { yang_catat: who, selisih })
+      await logAudit('closing_stok', b.id, 'update_stok', sebelum, aktual, { yang_catat: who, selisih, ...(staffJumlah > 0 ? { makan_staf: staffJumlah } : {}) })
       showToast(`✅ ${b.nama}: ${sebelum} → ${aktual} ${b.satuan_dasar}`)
       // Clear input setelah berhasil
       setInputs(i => ({ ...i, [b.id]: '' }))
@@ -3349,28 +3350,52 @@ function ClosingView({ bahanBaku, closing, showToast, loadData, logAudit, userNa
       })}
 
       {/* Tanya waste saat stok turun */}
-      {wastePrompt && (
+      {wastePrompt && (() => {
+        const kurang = wastePrompt.sebelum - wastePrompt.aktual
+        const sat = wastePrompt.b.satuan_dasar
+        const nStaf = Number(staffQty), nWaste = Number(wasteQty) || 0
+        const stafDiisi = staffQty !== '' && nStaf >= 0
+        const lebih = (stafDiisi ? nStaf : 0) + nWaste > kurang + 1e-9
+        const bolehSimpan = stafDiisi && !lebih
+        const simpan = (waste) => { const p = wastePrompt; setWastePrompt(null); handleSave(p.b, waste, nStaf) }
+        return (
         <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'flex-end', justifyContent: 'center', zIndex: 1000 }}
           onClick={() => setWastePrompt(null)}>
-          <div style={{ background: C.panel, borderRadius: '16px 16px 0 0', padding: '20px', width: '100%', maxWidth: '520px' }} onClick={e => e.stopPropagation()}>
+          <div style={{ background: C.panel, borderRadius: '16px 16px 0 0', padding: '20px', paddingBottom: 'calc(20px + env(safe-area-inset-bottom, 0px))', width: '100%', maxWidth: '520px', maxHeight: '92dvh', overflowY: 'auto' }} onClick={e => e.stopPropagation()}>
             <div style={{ fontSize: '15px', fontWeight: 600, marginBottom: '2px' }}>{wastePrompt.b.nama}</div>
             <div style={{ fontSize: '12px', color: C.text3, marginBottom: '10px' }}>
-              Stok di aplikasi {wastePrompt.sebelum}, kamu hitung sisa <strong style={{ color: C.text }}>{wastePrompt.aktual} {wastePrompt.b.satuan_dasar}</strong>.
-              Berarti <strong style={{ color: C.red }}>{wastePrompt.sebelum - wastePrompt.aktual} {wastePrompt.b.satuan_dasar} berkurang</strong>.
+              Stok di aplikasi {wastePrompt.sebelum}, kamu hitung sisa <strong style={{ color: C.text }}>{wastePrompt.aktual} {sat}</strong>.
+              Berarti <strong style={{ color: C.red }}>{kurang} {sat} berkurang</strong>.
             </div>
+
+            {/* 1. Makan staf: wajib diisi, boleh 0 */}
+            <div style={{ background: C.panel2, borderRadius: '10px', padding: '12px', marginBottom: '10px', border: `1px solid ${stafDiisi ? C.border : C.yellowBorder}` }}>
+              <label style={S.label}>🍽️ Dari yang berkurang, berapa yang <strong>dimakan staf</strong>? ({sat}) · wajib diisi</label>
+              <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                <input type="number" inputMode="decimal" min="0" value={staffQty} onChange={e => setStaffQty(e.target.value)} placeholder="isi angka"
+                  style={{ ...S.input, fontSize: '18px', textAlign: 'center', flex: 1 }} />
+                <button onClick={() => setStaffQty('0')} style={{
+                  ...S.btn, padding: '11px 12px', fontSize: '12px', whiteSpace: 'nowrap',
+                  background: staffQty === '0' ? C.greenBg : 'transparent', color: staffQty === '0' ? C.green : C.text2, border: `1px solid ${staffQty === '0' ? C.green : C.border}`,
+                }}>0 · tidak ada</button>
+              </div>
+              {!stafDiisi && <div style={{ fontSize: '11px', color: C.yellow, marginTop: '6px' }}>Isi dulu. Kalau tidak ada yang dimakan staf, tekan "0 · tidak ada".</div>}
+            </div>
+
+            {/* 2. Waste: opsional */}
             <div style={{ background: C.yellowBg, border: `1px solid ${C.yellowBorder}`, borderRadius: '8px', padding: '8px 10px', fontSize: '11.5px', color: C.yellow, marginBottom: '10px' }}>
-              Dari yang berkurang itu, berapa yang <strong>dibuang / rusak</strong>? Bukan sisa stoknya. Kalau berkurang karena terpakai masak, pilih "Tidak ada".
+              Lalu, berapa yang <strong>dibuang / rusak</strong>? Bukan sisa stoknya. Kalau berkurang karena terpakai masak, pilih "Tidak ada".
             </div>
             <div style={{ background: C.panel2, borderRadius: '10px', padding: '12px', marginBottom: '10px' }}>
-              <label style={S.label}>Jumlah yang dibuang ({wastePrompt.b.satuan_dasar}), maksimal {wastePrompt.sebelum - wastePrompt.aktual}</label>
+              <label style={S.label}>Jumlah yang dibuang ({sat}), maksimal {kurang}</label>
               <input type="number" inputMode="decimal" value={wasteQty} onChange={e => setWasteQty(e.target.value)} placeholder="0"
-                max={wastePrompt.sebelum - wastePrompt.aktual}
-                style={{ ...S.input, fontSize: '18px', textAlign: 'center', marginBottom: '6px', borderColor: Number(wasteQty) > wastePrompt.sebelum - wastePrompt.aktual ? C.red : undefined }} />
-              {Number(wasteQty) > wastePrompt.sebelum - wastePrompt.aktual && (
-                <div style={{ fontSize: '11px', color: C.red, marginBottom: '6px' }}>❌ Lebih besar dari yang berkurang ({wastePrompt.sebelum - wastePrompt.aktual}). Yang diisi adalah jumlah yang dibuang, bukan sisa stok.</div>
+                max={kurang}
+                style={{ ...S.input, fontSize: '18px', textAlign: 'center', marginBottom: '6px', borderColor: lebih ? C.red : undefined }} />
+              {lebih && (
+                <div style={{ fontSize: '11px', color: C.red, marginBottom: '6px' }}>❌ Makan staf + dibuang lebih besar dari yang berkurang ({kurang}). Yang diisi adalah jumlahnya, bukan sisa stok.</div>
               )}
-              <button onClick={() => setWasteQty(String(wastePrompt.sebelum - wastePrompt.aktual))} style={{ ...S.btn, padding: '5px 10px', fontSize: '11px', marginBottom: '8px', background: 'transparent', color: C.text2, border: `1px dashed ${C.border}` }}>
-                Semua yang berkurang dibuang ({wastePrompt.sebelum - wastePrompt.aktual} {wastePrompt.b.satuan_dasar})
+              <button onClick={() => setWasteQty(String(Math.max(0, kurang - (stafDiisi ? nStaf : 0))))} style={{ ...S.btn, padding: '5px 10px', fontSize: '11px', marginBottom: '8px', background: 'transparent', color: C.text2, border: `1px dashed ${C.border}` }}>
+                Sisanya dibuang semua ({Math.max(0, kurang - (stafDiisi ? nStaf : 0))} {sat})
               </button>
               <div style={{ display: 'flex', gap: '5px', flexWrap: 'wrap' }}>
                 {ALASAN_WASTE.map(a => (
@@ -3382,14 +3407,15 @@ function ClosingView({ bahanBaku, closing, showToast, loadData, logAudit, userNa
               </div>
             </div>
             <div style={{ display: 'flex', gap: '8px' }}>
-              <button onClick={() => { const p = wastePrompt; setWastePrompt(null); handleSave(p.b, null) }}
-                style={{ ...S.btn, ...S.btnSecondary, flex: 1, padding: '12px' }}>Tidak ada, simpan</button>
-              <button disabled={!(Number(wasteQty) > 0) || Number(wasteQty) > wastePrompt.sebelum - wastePrompt.aktual} onClick={() => { const p = wastePrompt; setWastePrompt(null); handleSave(p.b, { jumlah: Number(wasteQty), alasan: wasteAlasan }) }}
-                style={{ ...S.btn, ...S.btnDanger, flex: 1, padding: '12px', opacity: Number(wasteQty) > 0 && Number(wasteQty) <= wastePrompt.sebelum - wastePrompt.aktual ? 1 : 0.5 }}>🗑️ Catat waste & simpan</button>
+              <button disabled={!bolehSimpan || nWaste > 0} onClick={() => simpan(null)}
+                style={{ ...S.btn, ...S.btnSecondary, flex: 1, padding: '12px', opacity: bolehSimpan && !(nWaste > 0) ? 1 : 0.5 }}>Tidak ada waste, simpan</button>
+              <button disabled={!bolehSimpan || !(nWaste > 0)} onClick={() => simpan({ jumlah: nWaste, alasan: wasteAlasan })}
+                style={{ ...S.btn, ...S.btnDanger, flex: 1, padding: '12px', opacity: bolehSimpan && nWaste > 0 ? 1 : 0.5 }}>🗑️ Catat waste & simpan</button>
             </div>
           </div>
         </div>
-      )}
+        )
+      })()}
     </div>
   )
 }
