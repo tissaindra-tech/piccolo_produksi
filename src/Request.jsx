@@ -87,6 +87,7 @@ export function RequestBelanjaView({ bahanBaku = [], requests = [], setRequests,
       if (error) throw error
       ubahLokal(r.id, patch)
       setNoteOwner(p => { const n = { ...p }; delete n[r.id]; return n })
+      if (logAudit) logAudit('request_belanja', r.id, 'update', null, ringkasItems(r.items), { dari: r.status, ke: status, dibuat_oleh: r.dibuat_oleh })
       showToast(status === 'disetujui' ? '✅ Disetujui' : 'Request ditolak')
       if (!setRequests && loadData) loadData()
     } catch (e) { showToast('❌ ' + e.message) }
@@ -107,26 +108,46 @@ export function RequestBelanjaView({ bahanBaku = [], requests = [], setRequests,
   // untuk belanja tanpa nota atau nota yang mencakup banyak request sekaligus.
   const tandaiDibeli = async (r) => {
     if (sibuk[r.id]) return
+    // Tombol ini gampang kepencet tidak sengaja, jadi selalu tanya dulu dan tampilkan isi request-nya.
+    if (!window.confirm(`Yakin request ${r.dibuat_oleh} SUDAH DIBELI?\n\n${ringkasItems(r.items)}`)) return
     setSibuk(p => ({ ...p, [r.id]: true }))
     const { error } = await supabase.from('request_belanja').update({ status: 'dibeli' }).eq('id', r.id)
     setSibuk(p => { const n = { ...p }; delete n[r.id]; return n })
     if (error) { showToast('❌ ' + error.message); return }
     ubahLokal(r.id, { status: 'dibeli' })
-    if (logAudit) logAudit('request_belanja', r.id, 'update', 'disetujui', 'dibeli', { oleh: userName })
+    // Kolom bahan_id di audit_log berupa angka: dulu diisi teks 'disetujui' sehingga catatan riwayat selalu gagal tersimpan.
+    if (logAudit) logAudit('request_belanja', r.id, 'update', null, ringkasItems(r.items), { dari: 'disetujui', ke: 'dibeli', dibuat_oleh: r.dibuat_oleh })
     showToast('✅ Ditandai sudah dibeli')
+    if (!setRequests && loadData) loadData()
+  }
+
+  // Batalkan tanda "sudah dibeli" yang kepencet tidak sengaja: kembalikan ke "disetujui".
+  // Hanya untuk yang ditandai manual (belanja_id kosong). Yang sudah masuk nota diubah lewat notanya,
+  // supaya stok dan laporan belanja tidak berselisih.
+  const batalDibeli = async (r) => {
+    if (sibuk[r.id] || r.belanja_id) return
+    if (!window.confirm(`Kembalikan request ${r.dibuat_oleh} ke "Disetujui · siap dibeli"?\n\n${ringkasItems(r.items)}`)) return
+    setSibuk(p => ({ ...p, [r.id]: true }))
+    const { error } = await supabase.from('request_belanja').update({ status: 'disetujui' }).eq('id', r.id).eq('status', 'dibeli').is('belanja_id', null)
+    setSibuk(p => { const n = { ...p }; delete n[r.id]; return n })
+    if (error) { showToast('❌ ' + error.message); return }
+    ubahLokal(r.id, { status: 'disetujui' })
+    if (logAudit) logAudit('request_belanja', r.id, 'update', null, ringkasItems(r.items), { dari: 'dibeli', ke: 'disetujui', alasan: 'batal tandai dibeli', dibuat_oleh: r.dibuat_oleh })
+    showToast('↩ Dikembalikan ke Disetujui')
     if (!setRequests && loadData) loadData()
   }
   const [sibukSemua, setSibukSemua] = useState(false)
   const tandaiSemuaDibeli = async () => {
-    const ids = requests.filter(r => r.status === 'disetujui').map(r => r.id)
+    const siap = requests.filter(r => r.status === 'disetujui')
+    const ids = siap.map(r => r.id)
     if (ids.length === 0 || sibukSemua) return
-    if (!window.confirm(`Tandai ${ids.length} request yang disetujui sebagai sudah dibeli?`)) return
+    if (!window.confirm(`Tandai ${ids.length} request yang disetujui sebagai SUDAH DIBELI?\n\n${siap.map(r => `• ${r.dibuat_oleh}: ${ringkasItems(r.items)}`).join('\n')}`)) return
     setSibukSemua(true)
     const { error } = await supabase.from('request_belanja').update({ status: 'dibeli' }).in('id', ids)
     setSibukSemua(false)
     if (error) { showToast('❌ ' + error.message); return }
     setRequests && setRequests(prev => prev.map(x => ids.includes(x.id) ? { ...x, status: 'dibeli' } : x))
-    if (logAudit) logAudit('request_belanja', ids.join(','), 'update', 'disetujui', 'dibeli', { jumlah: ids.length, oleh: userName })
+    if (logAudit) siap.forEach(r => logAudit('request_belanja', r.id, 'update', null, ringkasItems(r.items), { dari: 'disetujui', ke: 'dibeli', sekaligus: ids.length, dibuat_oleh: r.dibuat_oleh }))
     showToast(`✅ ${ids.length} request ditandai sudah dibeli`)
     if (!setRequests && loadData) loadData()
   }
@@ -265,6 +286,11 @@ export function RequestBelanjaView({ bahanBaku = [], requests = [], setRequests,
               {!isOwner && <button onClick={() => setView('inputnota')} style={{ ...S.btn, ...S.btnPrimary, padding: '8px 12px', fontSize: '12px' }}>Input nota →</button>}
               {isOwner && <button onClick={() => window.confirm(`Batalkan request ${r.dibuat_oleh}?`) && batalkan(r)} disabled={!!sibuk[r.id]} style={{ ...S.btn, background: 'transparent', color: C.text3, border: `1px dashed ${C.border}`, padding: '8px 12px', fontSize: '12px' }}>Batalkan</button>}
             </div>
+          )}
+          {r.status === 'dibeli' && !r.belanja_id && (
+            <button onClick={() => batalDibeli(r)} disabled={!!sibuk[r.id]} style={{ ...S.btn, background: 'transparent', color: C.text2, border: `1px dashed ${C.border}`, padding: '6px 10px', fontSize: '11px', marginTop: '8px', opacity: sibuk[r.id] ? 0.6 : 1 }}>
+              {sibuk[r.id] ? 'Menyimpan...' : '↩ Batalkan, belum dibeli'}
+            </button>
           )}
         </div>
       ))}
